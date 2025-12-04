@@ -1,17 +1,31 @@
 package Clientemulti;
 import java.io.IOException;
 import java.net.Socket;
+
 public class ClienteMulti {
 
     public static void main(String[] args) throws IOException {
-        Socket s = new Socket("10.22.20.229",8080);
-        ParaMandar paraMandar = new ParaMandar(s);
-        Thread hiloParaMandar = new Thread(paraMandar);
-        hiloParaMandar.start();
+        System.out.println("Intentando conectar...");
+        try (Socket s = new Socket("localhost", 8080)) {
+            System.out.println("Conectado. Esperando mensajes del servidor...");
 
-        ParaRecibir paraRecibir = new ParaRecibir(s);
-        Thread hiloParaRecibir = new Thread(paraRecibir);
-        hiloParaRecibir.start();
+            ParaMandar paraMandar = new ParaMandar(s);
+            Thread hiloParaMandar = new Thread(paraMandar);
+            hiloParaMandar.start();
+
+            ParaRecibir paraRecibir = new ParaRecibir(s);
+            Thread hiloParaRecibir = new Thread(paraRecibir);
+            hiloParaRecibir.start();
+
+            try {
+                hiloParaMandar.join();
+                hiloParaRecibir.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error de conexión: " + e.getMessage());
+        }
     }
-
 }

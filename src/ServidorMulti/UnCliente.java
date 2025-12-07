@@ -1,5 +1,8 @@
 package ServidorMulti;
-import java.io.*;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.net.Socket;
 import java.sql.SQLException;
 
@@ -8,165 +11,120 @@ public class UnCliente implements Runnable {
     private final DataOutputStream salida;
     private final DataInputStream entrada;
     private final String claveCliente;
+    private final IServidor servidor;
 
-    boolean estaAutenticado = false;
-    String nombreUsuario = null;
+    private boolean autenticado = false;
+    private String nombreUsuario = null;
 
-    UnCliente(Socket s, String claveCliente) throws IOException {
+    public UnCliente(Socket s, String claveCliente, IServidor servidor) throws IOException {
         this.socket = s;
         this.claveCliente = claveCliente;
+        this.servidor = servidor;
         this.salida = new DataOutputStream(s.getOutputStream());
         this.entrada = new DataInputStream(s.getInputStream());
     }
+
+    public boolean isAutenticado() { return autenticado; }
+    public String getNombreUsuario() { return nombreUsuario; }
 
     @Override
     public void run() {
         while (!socket.isClosed()) {
             try {
                 String mensaje = entrada.readUTF();
-                procesarMensaje(mensaje);
+                procesarEntrada(mensaje);
             } catch (IOException ex) {
                 cerrarConexion();
                 break;
             } catch (SQLException e) {
-                enviarMensaje("ERROR en base de datos: " + e.getMessage());
+                enviarMensaje("Error interno BD: " + e.getMessage());
             }
         }
     }
 
-    private void procesarMensaje(String mensaje) throws IOException, SQLException {
+    private void procesarEntrada(String mensaje) throws IOException, SQLException {
         if (mensaje.startsWith("/")) {
             manejarComando(mensaje);
-        } else if (estaAutenticado) {
-            manejarChat(mensaje);
+        } else if (autenticado) {
+            if (mensaje.startsWith("@")) {
+                String[] partes = mensaje.split(" ", 2);
+                if (partes.length > 1) {
+                    servidor.enviarMensajePrivado(partes[0].substring(1), partes[1], this);
+                }
+            } else {
+                servidor.difundirMensaje(mensaje, this);
+            }
         } else {
-            enviarMensaje("Debes autenticarte primero. Usa /login o /register.");
-        }
-    }
-
-    private void manejarChat(String mensaje) {
-        if (mensaje.startsWith("@")) {
-            ServidorMulti.enviarMensajePrivado(
-                    "algunaClave",
-                    "MENSAJE PRIVADO DE " + nombreUsuario + ": " + mensaje
-            );
-        } else {
-            String mensajeADifundir = String.format("%s: %s", nombreUsuario, mensaje);
-            ServidorMulti.difundirMensaje(mensajeADifundir);
+            enviarMensaje(Constantes.ERR_AUTH_REQUERIDA);
         }
     }
 
     private void manejarComando(String comandoCompleto) throws IOException, SQLException {
-        String[] partes = comandoCompleto.split(" ", 2);
+        String[] partes = comandoCompleto.split(" ", 3);
         String comando = partes[0].toLowerCase();
 
         switch (comando) {
-            case "/login":
-                manejarLogin(partes);
+            case Constantes.CMD_LOGIN:
+                procesarLogin(partes);
                 break;
-            case "/register":
-                manejarRegistro(partes);
+            case Constantes.CMD_REGISTER:
+                procesarRegistro(partes);
                 break;
-            case "/exit":
-                cerrarSesionYConexion();
+            case Constantes.CMD_EXIT:
+                cerrarConexion();
                 break;
             default:
-                enviarMensaje("Comando desconocido: " + comando);
+                enviarMensaje("Comando desconocido.");
         }
     }
 
-    private void manejarLogin(String[] partes) throws SQLException {
-        if (estaAutenticado) {
-            enviarMensaje("Ya has iniciado sesión como " + nombreUsuario + ". Usa /exit para cerrar sesión primero.");
+    private void procesarLogin(String[] partes) throws SQLException {
+        if (autenticado) {
+            enviarMensaje("Ya estás conectado como " + nombreUsuario);
             return;
         }
-        if (partes.length < 2) {
-            enviarMensaje("Uso: /login <usuario> <contraseña>");
+        if (partes.length < 3) {
+            enviarMensaje("Uso: /login <usuario> <pass>");
             return;
         }
+        String usuario = partes[1];
+        String pass = partes[2];
 
-        String[] credenciales = partes[1].split(" ", 2);
-        if (credenciales.length != 2) {
-            enviarMensaje("Uso: /login <usuario> <contraseña>");
-            return;
-        }
-
-        String usuario = credenciales[0];
-        String contrasena = credenciales[1];
-
-        if (ServidorMulti.estaUsuarioActivo(usuario)) {
-            enviarMensaje("ERROR: El usuario '" + usuario + "' ya tiene una sesión activa.");
-            return;
-        }
-
-        if (ServidorMulti.getGestorUsuarios().autenticar(usuario, contrasena)) {
-            establecerSesion(usuario);
+        if (servidor.getGestorUsuarios().autenticar(usuario, pass)) {
+            if (servidor.registrarSesionActiva(usuario, claveCliente)) {
+                this.autenticado = true;
+                this.nombreUsuario = usuario;
+                enviarMensaje("Login exitoso. Hola " + usuario);
+            } else {
+                enviarMensaje(Constantes.ERR_LOGIN_DUPLICADO);
+            }
         } else {
-            enviarMensaje("ERROR: Usuario o contraseña incorrectos.");
+            enviarMensaje("Credenciales incorrectas.");
         }
     }
 
-    private void manejarRegistro(String[] partes) throws SQLException {
-        if (estaAutenticado) {
-            enviarMensaje("Ya has iniciado sesión como " + nombreUsuario + ". Usa /exit para cerrar sesión primero.");
+    private void procesarRegistro(String[] partes) throws SQLException {
+        if (partes.length < 3) {
+            enviarMensaje("Uso: /register <usuario> <pass>");
             return;
         }
-        if (partes.length < 2) {
-            enviarMensaje("Uso: /register <usuario> <contraseña>");
-            return;
-        }
-
-        String[] credenciales = partes[1].split(" ", 2);
-        if (credenciales.length != 2) {
-            enviarMensaje("Uso: /register <usuario> <contraseña>");
-            return;
-
-        }
-        String usuario = credenciales[0];
-        String contrasena = credenciales[1];
-
-        String resultado = ServidorMulti.getGestorUsuarios().registrarUsuario(usuario, contrasena);
-
-        if (resultado.equals("REGISTRO_OK")) {
-            enviarMensaje("REGISTRO EXITOSO. Por favor, usa /login para iniciar sesión.");
-        } else {
-            enviarMensaje(resultado);
-        }
+        String res = servidor.getGestorUsuarios().registrarUsuario(partes[1], partes[2]);
+        enviarMensaje(res.equals("REGISTRO_OK") ? "Registro exitoso. Ahora haz /login." : res);
     }
 
-    private void establecerSesion(String usuario) {
-        this.nombreUsuario = usuario;
-        this.estaAutenticado = true;
-        ServidorMulti.agregarUsuarioActivo(usuario, claveCliente);
-
-        enviarMensaje("INICIO DE SESIÓN EXITOSO. Bienvenido, " + usuario + ".");
-        System.out.println("Cliente " + claveCliente + " autenticado como: " + usuario);
-    }
-
-    public void enviarMensaje(String mensaje) {
+    public void enviarMensaje(String msg) {
         try {
-            salida.writeUTF(mensaje);
-        } catch (IOException e) {
-        }
-    }
-    private void cerrarSesionYConexion() {
-        if (estaAutenticado && nombreUsuario != null) {
-            ServidorMulti.removerUsuarioActivo(nombreUsuario);
-            System.out.println(nombreUsuario + " ha cerrado sesión.");
-            this.estaAutenticado = false;
-            this.nombreUsuario = null;
-        }
-        cerrarConexion();
+            salida.writeUTF(msg);
+        } catch (IOException e) { }
     }
 
     private void cerrarConexion() {
         try {
-            if (socket != null && !socket.isClosed()) {
-                socket.close();
-            }
+            socket.close();
         } catch (IOException e) {
+            // Logging simple
         } finally {
-            ServidorMulti.eliminarCliente(claveCliente);
+            servidor.eliminarCliente(claveCliente);
         }
     }
 }

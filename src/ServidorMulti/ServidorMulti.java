@@ -13,9 +13,11 @@ public class ServidorMulti implements IServidor {
 
     private final AtomicInteger contadorClientes = new AtomicInteger(0);
     private final GestorUsuarios gestorUsuarios;
+    private final GestorPartida gestorPartida;
 
     public ServidorMulti() {
         this.gestorUsuarios = new GestorUsuarios(new ManejadorBaseDatos());
+        this.gestorPartida = new GestorPartida();
     }
 
     public static void main(String[] args) throws IOException {
@@ -26,6 +28,7 @@ public class ServidorMulti implements IServidor {
 
     public void iniciar(int puerto) throws IOException {
         try (ServerSocket servidorSocket = new ServerSocket(puerto)) {
+            System.out.println("Servidor escuchando en el puerto " + puerto);
             while (true) {
                 Socket s = servidorSocket.accept();
                 String claveCliente = String.valueOf(contadorClientes.getAndIncrement());
@@ -40,10 +43,14 @@ public class ServidorMulti implements IServidor {
         }
     }
 
-
     @Override
     public GestorUsuarios getGestorUsuarios() {
         return this.gestorUsuarios;
+    }
+
+    @Override
+    public GestorPartida getGestorPartida() {
+        return this.gestorPartida;
     }
 
     @Override

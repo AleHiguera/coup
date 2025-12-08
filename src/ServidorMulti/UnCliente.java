@@ -70,6 +70,29 @@ public class UnCliente implements Runnable {
             case Constantes.CMD_REGISTER:
                 procesarRegistro(partes);
                 break;
+
+            case "/entrar":
+            case "/join":
+                if (autenticado) {
+                    servidor.getGestorPartida().unirJugador(this);
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
+            case "/jugar":
+                if (autenticado) {
+                    if (partes.length < 2) {
+                        enviarMensaje("Uso: /jugar <accion> (Ej: /jugar ingreso)");
+                    } else {
+
+                        servidor.getGestorPartida().procesarJugada(this, partes[1]);
+                    }
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
             case Constantes.CMD_EXIT:
                 cerrarConexion();
                 break;
@@ -80,7 +103,7 @@ public class UnCliente implements Runnable {
 
     private void procesarLogin(String[] partes) throws SQLException {
         if (autenticado) {
-            enviarMensaje("Ya estás conectado como " + nombreUsuario);
+            enviarMensaje("Ya estas conectado como " + nombreUsuario);
             return;
         }
         if (partes.length < 3) {
@@ -122,7 +145,6 @@ public class UnCliente implements Runnable {
         try {
             socket.close();
         } catch (IOException e) {
-            // Logging simple
         } finally {
             servidor.eliminarCliente(claveCliente);
         }

@@ -91,6 +91,14 @@ public class SalaCoup {
         return String.format("ACCION: %s tomó Ingreso (+1 moneda).", jugador.getNombreUsuario());
     }
 
+    public String iniciarAccionAyudaExterior(Jugador jugador) {
+        if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
+
+        // NO damos monedas todavía.
+        // Usamos "TODOS" como víctima porque cualquiera puede bloquear la Ayuda Exterior.
+        return "INTENTO:AYUDA:TODOS";
+    }
+
     public String realizarAccionAyudaExterior(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
 
@@ -136,7 +144,6 @@ public class SalaCoup {
         Jugador victima = buscarJugador(nombreVictima);
 
         if (tipoAccion.equals("ROBAR")) {
-            // Lógica de robar
             int monto = (victima.getMonedas() >= 2) ? 2 : victima.getMonedas();
             victima.pagar(monto);
             atacante.ganarMonedas(monto);
@@ -144,10 +151,13 @@ public class SalaCoup {
             return "EXITO: " + atacante.getNombreUsuario() + " robó " + monto + " monedas a " + nombreVictima;
 
         } else if (tipoAccion.equals("ASESINAR")) {
-            // Lógica de asesinato
-            // OJO: Aquí retornamos ESPERA_CARTA para usar la lógica que hicimos antes
-            // No pasamos turno todavía porque falta que la víctima elija carta
             return "ESPERA_CARTA:" + nombreVictima;
+        }
+
+        if (tipoAccion.equals("AYUDA")) {
+            atacante.ganarMonedas(2);
+            siguienteTurno();
+            return "EXITO: " + atacante.getNombreUsuario() + " recibió Ayuda Exterior (+2 monedas).";
         }
 
         return "ERROR: Acción pendiente desconocida.";

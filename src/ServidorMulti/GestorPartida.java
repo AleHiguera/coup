@@ -79,12 +79,38 @@ public class GestorPartida {
 
     private void procesarFaseBloqueo(UnCliente cliente, String comandoCompleto) {
         String nombreJugador = cliente.getNombreUsuario();
-        if (!nombreJugador.equals(victimaPendiente)) {
-            cliente.enviarMensaje("SILENCIO: Estamos esperando que " + victimaPendiente + " responda al ataque.");
+        String comando = comandoCompleto.toLowerCase();
+
+        boolean esAyudaExterior = "TODOS".equals(victimaPendiente) && "AYUDA".equals(accionPendiente);
+        if (!esAyudaExterior && !nombreJugador.equals(victimaPendiente)) {
+            cliente.enviarMensaje("SILENCIO: Solo " + victimaPendiente + " puede responder.");
             return;
         }
 
-        String comando = comandoCompleto.toLowerCase();
+        // El atacante no puede bloquearse a sí mismo
+        if (nombreJugador.equals(atacantePendiente)) {
+            cliente.enviarMensaje("No puedes bloquear tu propia acción.");
+            return;
+        }
+
+        // OPCIÓN A: BLOQUEAR CON DUQUE
+        if (comando.startsWith("/bloquear")) {
+            // Verificamos si es Ayuda Exterior, solo el Duque bloquea
+            if (esAyudaExterior) {
+                // Aquí podríamos validar que escriban "/bloquear duque" explícitamente
+                mensajeGlobal("¡BLOQUEO! " + nombreJugador + " dice tener al DUQUE y bloquea la Ayuda Exterior.");
+            } else {
+                mensajeGlobal("¡BLOQUEO! " + nombreJugador + " bloqueó el ataque.");
+            }
+
+            // Cancelamos la acción y pasamos turno
+            accionPendiente = null;
+            atacantePendiente = null;
+            victimaPendiente = null;
+            juego.siguienteTurno();
+            anunciarTurno();
+            return;
+        }
 
         // OPCIÓN A: LA VÍCTIMA PERMITE LA ACCIÓN
         if (comando.startsWith("/permitir")) {
@@ -136,7 +162,7 @@ public class GestorPartida {
                 resultado = juego.realizarAccionIngreso(jugadorLogico);
                 break;
             case "ayuda":
-                resultado = juego.realizarAccionAyudaExterior(jugadorLogico);
+                resultado = juego.iniciarAccionAyudaExterior(jugadorLogico);
                 break;
             case "impuestos":
                 resultado = juego.realizarAccionImpuestos(jugadorLogico);

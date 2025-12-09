@@ -9,8 +9,10 @@ import java.util.Map;
 public class GestorPartida {
     private SalaCoup juego;
     private Map<String, UnCliente> puentesDeConexion;
-
     private String jugadorPendienteDeDescarte = null;
+    private String atacantePendiente = null;
+    private String victimaPendiente = null;
+    private String accionPendiente = null;
 
     public GestorPartida() {
         this.juego = new SalaCoup();
@@ -67,7 +69,51 @@ public class GestorPartida {
             return;
         }
 
+        if (accionPendiente != null) {
+            procesarFaseBloqueo(cliente, comandoCompleto);
+            return;
+        }
+
         procesarFaseNormal(cliente, comandoCompleto);
+    }
+
+    private void procesarFaseBloqueo(UnCliente cliente, String comandoCompleto) {
+        String nombreJugador = cliente.getNombreUsuario();
+        if (!nombreJugador.equals(victimaPendiente)) {
+            cliente.enviarMensaje("SILENCIO: Estamos esperando que " + victimaPendiente + " responda al ataque.");
+            return;
+        }
+
+        String comando = comandoCompleto.toLowerCase();
+
+        // OPCIÓN A: LA VÍCTIMA PERMITE LA ACCIÓN
+        if (comando.startsWith("/permitir")) {
+            mensajeGlobal(victimaPendiente + " decidió NO bloquear.");
+
+            Jugador atacante = obtenerJugador(atacantePendiente);
+            String res = juego.ejecutarAccionPendiente(accionPendiente, atacante, victimaPendiente);
+
+            accionPendiente = null;
+            atacantePendiente = null;
+            victimaPendiente = null;
+
+            manejarResultadoAccion(cliente, res, atacante);
+            return;
+        }
+
+        // OPCIÓN B: LA VÍCTIMA BLOQUEA
+        if (comando.startsWith("/bloquear")) {
+            String cartaBloqueo = comando.split(" ").length > 1 ? comando.split(" ")[1] : "carta";
+            mensajeGlobal("¡BLOQUEO! " + victimaPendiente + " bloqueó el ataque usando " + cartaBloqueo + ".");
+            accionPendiente = null;
+            atacantePendiente = null;
+            victimaPendiente = null;
+            juego.siguienteTurno();
+            anunciarTurno();
+            return;
+        }
+
+        cliente.enviarMensaje("OPCIONES: Escribe '/permitir' para aceptar o '/bloquear <carta>' para defenderte.");
     }
 
     private void procesarFaseNormal(UnCliente cliente, String comandoCompleto) {
@@ -99,12 +145,12 @@ public class GestorPartida {
                 resultado = juego.realizarAccionEmbajador(jugadorLogico);
                 break;
             case "robar":
-                if (objetivo == null) resultado = "ERROR: Faltó decir a quién robar. Uso: /jugar robar <nombre>";
-                else resultado = juego.realizarAccionRobar(jugadorLogico, objetivo);
+                if (objetivo == null) resultado = "ERROR: Faltó objetivo.";
+                else resultado = juego.iniciarAccionRobar(jugadorLogico, objetivo);
                 break;
             case "asesinar":
-                if (objetivo == null) resultado = "ERROR: Faltó decir a quién asesinar. Uso: /jugar asesinar <nombre>";
-                else resultado = juego.realizarAccionAsesinato(jugadorLogico, objetivo);
+                if (objetivo == null) resultado = "ERROR: Faltó objetivo.";
+                else resultado = juego.iniciarAccionAsesinato(jugadorLogico, objetivo);
                 break;
             case "golpe":
                 if (objetivo == null) resultado = "ERROR: Faltó decir a quién dar golpe. Uso: /jugar golpe <nombre>";
@@ -114,8 +160,21 @@ public class GestorPartida {
                 cliente.enviarMensaje("Acción desconocida. Comandos: ingreso, ayuda, impuestos, robar, asesinar, embajador, golpe.");
                 return;
         }
+        if (resultado.startsWith("INTENTO:")) {
+            String[] datos = resultado.split(":");
+            this.accionPendiente = datos[1];
+            this.victimaPendiente = datos[2];
+            this.atacantePendiente = nombreJugador;
 
-        manejarResultadoAccion(cliente, resultado, jugadorLogico);
+            mensajeGlobal(">>> ¡ATAQUE! " + nombreJugador + " quiere " + accionPendiente + " a " + victimaPendiente + " <<<");
+
+            UnCliente clienteVictima = puentesDeConexion.get(victimaPendiente);
+            if (clienteVictima != null) {
+                clienteVictima.enviarMensaje("¿Qué haces? Escribe: '/permitir' o '/bloquear <carta>'");
+            }
+        } else {
+            manejarResultadoAccion(cliente, resultado, jugadorLogico);
+        }
     }
 
     private void procesarFaseDescarte(UnCliente cliente, String comandoCompleto) {

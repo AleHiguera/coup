@@ -132,12 +132,32 @@ public class SalaCoup {
         }
     }
 
+    public String ejecutarAccionPendiente(String tipoAccion, Jugador atacante, String nombreVictima) {
+        Jugador victima = buscarJugador(nombreVictima);
+
+        if (tipoAccion.equals("ROBAR")) {
+            // Lógica de robar
+            int monto = (victima.getMonedas() >= 2) ? 2 : victima.getMonedas();
+            victima.pagar(monto);
+            atacante.ganarMonedas(monto);
+            siguienteTurno();
+            return "EXITO: " + atacante.getNombreUsuario() + " robó " + monto + " monedas a " + nombreVictima;
+
+        } else if (tipoAccion.equals("ASESINAR")) {
+            // Lógica de asesinato
+            // OJO: Aquí retornamos ESPERA_CARTA para usar la lógica que hicimos antes
+            // No pasamos turno todavía porque falta que la víctima elija carta
+            return "ESPERA_CARTA:" + nombreVictima;
+        }
+
+        return "ERROR: Acción pendiente desconocida.";
+    }
+
     // --- ACCIONES DE PERSONAJES (CARTAS) ---
 
     // 1. DUQUE
     public String realizarAccionImpuestos(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
-
         jugador.ganarMonedas(3);
         siguienteTurno();
         return String.format("DUQUE: %s cobró impuestos (+3 monedas).", jugador.getNombreUsuario());
@@ -166,6 +186,15 @@ public class SalaCoup {
         return String.format("CAPITÁN: %s robó %d monedas a %s.",
                 ladron.getNombreUsuario(), montoRobado, victima.getNombreUsuario());
     }
+    public String iniciarAccionRobar(Jugador ladron, String nombreVictima) {
+        if (!esTurnoDe(ladron)) return "ERROR: No es tu turno.";
+        Jugador victima = buscarJugador(nombreVictima);
+        if (victima == null || !victima.estaVivo()) return "ERROR: Objetivo inválido.";
+        if (ladron.equals(victima)) return "ERROR: Auto-robo no permitido.";
+
+        // No robamos aún, solo validamos.
+        return "INTENTO:ROBAR:" + victima.getNombreUsuario();
+    }
 
     // 3. ASESINO
     public String realizarAccionAsesinato(Jugador asesino, String nombreVictima) {
@@ -180,6 +209,18 @@ public class SalaCoup {
         }
 
         return "ESPERA_CARTA:" + victima.getNombreUsuario();
+    }
+
+    public String iniciarAccionAsesinato(Jugador asesino, String nombreVictima) {
+        if (!esTurnoDe(asesino)) return "ERROR: No es tu turno.";
+        Jugador victima = buscarJugador(nombreVictima);
+        if (victima == null || !victima.estaVivo()) return "ERROR: Objetivo inválido.";
+
+        if (!asesino.pagar(3)) return "ERROR: No tienes 3 monedas.";
+
+        // Cobramos las monedas YA. Si lo bloquean, las pierde (Regla estricta).
+        // Retornamos señal de intento.
+        return "INTENTO:ASESINAR:" + victima.getNombreUsuario();
     }
 
     // 4. EMBAJADOR

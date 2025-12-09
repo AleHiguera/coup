@@ -46,6 +46,11 @@ public class Jugador {
         return !mano.isEmpty();
     }
 
+    public void actualizarMano(List<TipoCarta> nuevasCartas) {
+        this.mano.clear();
+        this.mano.addAll(nuevasCartas);
+    }
+
     // --- Gestión de Monedas ---
 
     public void ganarMonedas(int cantidad) {

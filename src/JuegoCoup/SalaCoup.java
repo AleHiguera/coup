@@ -110,15 +110,26 @@ public class SalaCoup {
         if (!atacante.pagar(7)) {
             return "ERROR: No tienes suficientes monedas (Necesitas 7).";
         }
+        return "ESPERA_CARTA:" + victima.getNombreUsuario();
+    }
 
-        // Lógica simplificada: Elimina la primera carta disponible de la víctima
-        // En una versión completa, la víctima debería elegir qué carta perder.
-        TipoCarta cartaPerdida = victima.getManoActual().get(0);
-        victima.perderInfluencia(cartaPerdida);
+    public String concretarDescarte(String nombreVictima, String nombreCarta) {
+        Jugador victima = buscarJugador(nombreVictima);
+        if (victima == null) return "ERROR: Jugador no encontrado.";
 
-        siguienteTurno();
-        return String.format("GOLPE DE ESTADO: %s pagó 7 monedas. %s perdió (%s).",
-                atacante.getNombreUsuario(), victima.getNombreUsuario(), cartaPerdida);
+        TipoCarta cartaAEliminar;
+        try {
+            cartaAEliminar = TipoCarta.valueOf(nombreCarta.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return "ERROR: Carta inválida. Tus cartas son: " + victima.getManoActual();
+        }
+
+        if (victima.perderInfluencia(cartaAEliminar)) {
+            siguienteTurno();
+            return "DESCARTE_OK: " + nombreVictima + " perdió " + nombreCarta + ".";
+        } else {
+            return "ERROR: No tienes esa carta. Intenta de nuevo.";
+        }
     }
 
     // --- ACCIONES DE PERSONAJES (CARTAS) ---
@@ -168,13 +179,7 @@ public class SalaCoup {
             return "ERROR: No tienes 3 monedas para pagar al Asesino.";
         }
 
-        // Elimina carta automáticamente (Simplificado)
-        TipoCarta cartaPerdida = victima.getManoActual().get(0);
-        victima.perderInfluencia(cartaPerdida);
-
-        siguienteTurno();
-        return String.format("ASESINO: %s pagó 3 monedas y eliminó una carta (%s) de %s.",
-                asesino.getNombreUsuario(), cartaPerdida, victima.getNombreUsuario());
+        return "ESPERA_CARTA:" + victima.getNombreUsuario();
     }
 
     // 4. EMBAJADOR

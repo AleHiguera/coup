@@ -21,6 +21,9 @@ public class TestManual {
             testDescarteYMuerte();
             System.out.println("✅ Test Descarte y Muerte: PASÓ");
 
+            testGolpeDeEstadoObligatorio();
+            System.out.println("✅ Test golpe de estado obligatorio: PASÓ");
+
 
         } catch (Exception e) {
             System.err.println("\n ERROR CRÍTICO EN PRUEBAS: " + e.getMessage());
@@ -119,6 +122,27 @@ public class TestManual {
         String res2 = sala.concretarDescarte("Vic", "DUQUE");
         if (victima.estaVivo()) {
             throw new RuntimeException("El jugador debería estar muerto y sigue vivo.");
+        }
+    }
+    // 5.- Test de un golpe de estado obligatorio.
+    private static void testGolpeDeEstadoObligatorio() {
+        SalaCoup sala = new SalaCoup("T5", "Sala Golpe");
+        sala.agregarJugador("Rico");
+        sala.agregarJugador("Pobre");
+        sala.agregarJugador("Extra");
+        sala.iniciarPartida();
+
+        Jugador rico = sala.getJugadorActivo();
+
+        rico.ganarMonedas(9);
+        String res = sala.realizarGolpeDeEstado(rico, "Pobre");
+
+        if (!res.startsWith("ESPERA_CARTA")) {
+            throw new RuntimeException("El Golpe no pidió carta inmediatamente.");
+        }
+
+        if (rico.getMonedas() != 4) { // 11 - 7 = 4
+            throw new RuntimeException("No se cobraron las 7 monedas correctamente.");
         }
     }
 }

@@ -140,9 +140,18 @@ public class SalaCoup {
     }
 
     public synchronized String realizarGolpeDeEstado(Jugador atq, String nomVic) {
-        if (!validarTurno(atq)) return "ERROR: Turno incorrecto.";
-        if (!atq.pagar(7)) return "ERROR: Faltan monedas.";
-        return procesarAtaqueMortal(nomVic);
+        if (!validarTurno(atq)) {
+            return "ERROR: Turno incorrecto.";
+        }
+        if (!atq.pagar(7)) {
+            return "ERROR: No tienes suficientes monedas (Costo: 7).";
+        }
+        Jugador vic = buscarJugadorInterno(nomVic);
+        if (vic == null || !vic.estaVivo()) {
+            atq.ganarMonedas(7);
+            return "ERROR: Objetivo inválido o eliminado.";
+        }
+        return "ESPERA_CARTA:" + vic.getNombreUsuario();
     }
 
     private String procesarAtaqueMortal(String nomVic) {

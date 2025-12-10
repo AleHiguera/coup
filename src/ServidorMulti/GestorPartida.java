@@ -96,6 +96,17 @@ public class GestorPartida {
     private void procesarFaseNormal(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
         Jugador j = obtenerJugador(s, c.getNombreUsuario());
         if (j == null) return;
+
+        String[] partes = cmd.split(" ");
+        String accion = partes[0].toLowerCase();
+
+        if (j.getMonedas() >= 10 && !accion.equals("golpe")) {
+            c.enviarMensaje("⚠️ ¡REGLA DE ORO! Tienes " + j.getMonedas() + " monedas.");
+            c.enviarMensaje("Estás OBLIGADO a dar un Golpe de Estado.");
+            c.enviarMensaje("Uso: /jugar golpe <jugador>");
+            return;
+        }
+
         String res = ejecutarAccionEnSala(s, j, cmd);
         procesarResultadoAccion(c, res, s, e, j);
     }

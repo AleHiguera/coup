@@ -141,8 +141,13 @@ public class UnCliente implements Runnable {
     }
 
     private void procesarInvitar(String[] partes, String fullCmd) {
-        if (partes.length < 2) enviarMensaje("Uso: /invitar <usuario>");
-        else servidor.getGestorPartida().invitarUsuarios(this, fullCmd.substring(fullCmd.indexOf(' ') + 1).split(" "));
+        if (partes.length < 2) {
+            enviarMensaje("Uso: /invitar <usuario>");
+            return;
+        }
+
+        String listaUsuarios = fullCmd.substring(fullCmd.indexOf(' ') + 1).trim();
+        servidor.getGestorPartida().invitarUsuarios(this, listaUsuarios.split(" "));
     }
 
     private boolean verificarAuth() {

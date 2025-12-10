@@ -10,4 +10,5 @@ public interface IServidor {
 
     boolean registrarSesionActiva(String usuario, String claveCliente);
     void removerSesionActiva(String usuario);
+    String getUsuariosConectados();
 }

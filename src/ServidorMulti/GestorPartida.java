@@ -2,535 +2,316 @@ package ServidorMulti;
 
 import JuegoCoup.Jugador;
 import JuegoCoup.SalaCoup;
-
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class GestorPartida {
     private static class EstadoPartida {
-        String jugadorPendienteDeDescarte = null;
-        String atacantePendiente = null;
-        String victimaPendiente = null;
-        String accionPendiente = null;
+        String jugadorPendienteDeDescarte, atacantePendiente, victimaPendiente, accionPendiente;
     }
-    private final Map<String, SalaCoup> salasActivas;
-    private final Map<String, String> jugadorEnSala;
-    private final Map<String, UnCliente> puentesDeConexion;
-    private final Map<String, String> invitacionesPendientes;
-    private final Map<String, EstadoPartida> estadosPorSala;
+    private final Map<String, SalaCoup> salasActivas = new ConcurrentHashMap<>();
+    private final Map<String, String> jugadorEnSala = new ConcurrentHashMap<>();
+    private final Map<String, UnCliente> puentesDeConexion = new ConcurrentHashMap<>();
+    private final Map<String, String> invitacionesPendientes = new ConcurrentHashMap<>();
+    private final Map<String, EstadoPartida> estadosPorSala = new ConcurrentHashMap<>();
+    private static final int MIN_JUGADORES = 3, MAX_JUGADORES = 6;
 
-    private static final int MIN_JUGADORES = 3;
-    private static final int MAX_JUGADORES = 6;
-
-    public GestorPartida() {
-        this.salasActivas = new ConcurrentHashMap<>();
-        this.jugadorEnSala = new ConcurrentHashMap<>();
-        this.puentesDeConexion = new ConcurrentHashMap<>();
-        this.invitacionesPendientes = new ConcurrentHashMap<>();
-        this.estadosPorSala = new ConcurrentHashMap<>();
-    }
-    private SalaCoup obtenerSala(UnCliente cliente) {
-        String idSala = jugadorEnSala.get(cliente.getNombreUsuario());
-        return salasActivas.get(idSala);
-    }
-
-    private EstadoPartida obtenerEstado(String idSala) {
-        return estadosPorSala.get(idSala);
-    }
-
-    private Jugador obtenerJugador(SalaCoup sala, String nombre) {
-        for (Jugador j : sala.getJugadores()) {
-            if (j.getNombreUsuario().equals(nombre)) return j;
-        }
-        return null;
-    }
-
-    private void anunciarTurno(SalaCoup sala) {
-        Jugador activo = sala.getJugadorActivo();
-        if (activo == null) return;
-
-        String nombreSala = sala.getNombreSala();
-
-        for (Jugador j : sala.getJugadores()) {
-            UnCliente c = puentesDeConexion.get(j.getNombreUsuario());
-            if (c != null) {
-                if (j.getNombreUsuario().equals(activo.getNombreUsuario())) {
-                    c.enviarMensaje(">>> ¡ES TU TURNO en " + nombreSala + "! <<<");
-                } else {
-                    c.enviarMensaje("Turno en " + nombreSala + ": " + activo.getNombreUsuario());
-                }
-            }
+    public synchronized void registrarCliente(UnCliente c) {
+        if (c.getNombreUsuario() != null && !puentesDeConexion.containsKey(c.getNombreUsuario())) {
+            puentesDeConexion.put(c.getNombreUsuario(), c);
+            c.enviarMensaje("Opciones: /crear, /unirse, /salas");
         }
     }
-
-    private void mensajeGlobalEnSala(String idSala, String msg) {
-        SalaCoup sala = salasActivas.get(idSala);
-        if (sala != null) {
-            for (Jugador j : sala.getJugadores()) {
-                UnCliente c = puentesDeConexion.get(j.getNombreUsuario());
-                if (c != null) {
-                    c.enviarMensaje(msg);
-                }
-            }
-        }
-    }
-
-    private void enviarEstadoJugador(UnCliente cliente, Jugador j) {
-        cliente.enviarMensaje("Tus Cartas: " + j.getManoActual() + " | Monedas: " + j.getMonedas());
-    }
-    public synchronized void registrarCliente(UnCliente clienteConexion) {
-        String nombre = clienteConexion.getNombreUsuario();
-        if (nombre != null && !puentesDeConexion.containsKey(nombre)) {
-            puentesDeConexion.put(nombre, clienteConexion);
-            clienteConexion.enviarMensaje("¡Listo! Opciones: /crear <nombre> | /unirse <ID> | /salas");
-        }
-    }
-
-    public synchronized void eliminarJugador(String nombreUsuario) {
-        invitacionesPendientes.remove(nombreUsuario);
-
-        String idSala = jugadorEnSala.remove(nombreUsuario);
-        if (idSala != null) {
-            SalaCoup sala = salasActivas.get(idSala);
-            if (sala != null) {
-                sala.removerJugador(nombreUsuario);
-                mensajeGlobalEnSala(idSala, "El jugador " + nombreUsuario + " ha abandonado la sala.");
-
-                if (sala.getJugadores().isEmpty()) {
-                    salasActivas.remove(idSala);
-                    estadosPorSala.remove(idSala);
-                    System.out.println("Sala " + idSala + " eliminada por estar vacía.");
-                } else if (sala.isJuegoIniciado()) {
-                    sala.siguienteTurno();
-                    anunciarTurno(sala);
-                }
-            }
-        }
-    }
-
-    public void mostrarSalasDisponibles(UnCliente cliente) {
-        if (salasActivas.isEmpty()) {
-            cliente.enviarMensaje("No hay salas activas. Usa /crear <nombre> para iniciar una.");
-            return;
-        }
-        StringBuilder sb = new StringBuilder("Salas Activas:\n");
-        salasActivas.forEach((id, sala) -> {
-            sb.append("- Nombre: ").append(sala.getNombreSala())
-                    .append(" (ID: ").append(id).append(")")
-                    .append(" | Jugadores: ").append(sala.getJugadores().size())
-                    .append("/" + MAX_JUGADORES + " ").append(sala.isJuegoIniciado() ? "(En curso)" : "(Esperando)").append("\n");
-        });
-        cliente.enviarMensaje(sb.toString());
-    }
-    public String abandonarSala(String nombreUsuario) {
-        String idSala = jugadorEnSala.get(nombreUsuario);
-
-        if (idSala == null) {
-            return "ERROR: No estás actualmente en ninguna sala.";
-        }
-
-        SalaCoup sala = salasActivas.get(idSala);
-
-        eliminarJugador(nombreUsuario);
-
-        if (sala != null && sala.isJuegoIniciado()) {
-            return "PARTIDA_ABANDONADA: Has abandonado la sala '" + sala.getNombreSala() + "' (Juego en curso).";
-        }
-
-        return "SALA_ABANDONADA: Has salido de la sala.";
-    }
-    public void eliminarJugadorDeSala(UnCliente creador, String nombreVictima) {
-        String creadorNombre = creador.getNombreUsuario();
-        String idSala = jugadorEnSala.get(creadorNombre);
-        SalaCoup sala = salasActivas.get(idSala);
-
-        if (sala == null) {
-            creador.enviarMensaje("ERROR: No estás en ninguna sala.");
-            return;
-        }
-        if (sala.isJuegoIniciado()) {
-            creador.enviarMensaje("ERROR: No puedes eliminar jugadores una vez que la partida ha iniciado.");
-            return;
-        }
-        if (!creadorNombre.equals(sala.getJugadores().get(0).getNombreUsuario())) {
-            creador.enviarMensaje("ERROR: Solo el creador de la sala puede eliminar jugadores.");
-            return;
-        }
-        if (nombreVictima.equals(creadorNombre)) {
-            creador.enviarMensaje("ERROR: Usa /abandonar para salir de la sala.");
-            return;
-        }
-
-        if (jugadorEnSala.containsKey(nombreVictima) && jugadorEnSala.get(nombreVictima).equals(idSala)) {
-
-            eliminarJugador(nombreVictima);
-
-            UnCliente clienteVictima = puentesDeConexion.get(nombreVictima);
-            if (clienteVictima != null) {
-                clienteVictima.enviarMensaje("Has sido eliminado de la sala " + sala.getNombreSala() + " por el anfitrión.");
-                clienteVictima.enviarMensaje("¡Vuelve al menú principal! Opciones: /crear, /unirse, /salas");
-            }
-            creador.enviarMensaje("Jugador " + nombreVictima + " eliminado exitosamente.");
-            mensajeGlobalEnSala(idSala, "El anfitrión ha eliminado a " + nombreVictima + " de la sala.");
-        } else {
-            creador.enviarMensaje("ERROR: El usuario " + nombreVictima + " no está en tu sala.");
-        }
-    }
-    public void invitarUsuarios(UnCliente remitente, String[] invitados) {
-        String remitenteNombre = remitente.getNombreUsuario();
-        String idSala = jugadorEnSala.get(remitenteNombre);
-        SalaCoup sala = salasActivas.get(idSala);
-
-        if (sala == null) {
-            remitente.enviarMensaje("ERROR: Debes estar en una sala para invitar.");
-            return;
-        }
-        if (sala.isJuegoIniciado()) {
-            remitente.enviarMensaje("ERROR: La partida ya inició.");
-            return;
-        }
-
-        for (String invitadoNombre : invitados) {
-
-            if (invitadoNombre.equals(remitenteNombre)) {
-                remitente.enviarMensaje("ERROR: No puedes invitarte a ti mismo.");
-                continue;
-            }
-
-            UnCliente invitadoCliente = puentesDeConexion.get(invitadoNombre);
-
-            if (sala.getJugadores().size() >= MAX_JUGADORES) {
-                remitente.enviarMensaje("ERROR: La sala " + sala.getNombreSala() + " ya está llena.");
-                break;
-            }
-
-            if (invitadoCliente != null) {
-                if (!jugadorEnSala.containsKey(invitadoNombre)) {
-                    invitacionesPendientes.put(invitadoNombre, idSala);
-                    invitadoCliente.enviarMensaje("INVITACIÓN: Has sido invitado a la sala " + sala.getNombreSala() + " (ID: " + idSala + ") por " + remitenteNombre + ". Responde /si o /no.");
-                    remitente.enviarMensaje("Invitación enviada a " + invitadoNombre);
-                } else {
-                    SalaCoup otraSala = salasActivas.get(jugadorEnSala.get(invitadoNombre));
-                    remitente.enviarMensaje("ERROR: El usuario " + invitadoNombre + " ya está en la sala " + (otraSala != null ? otraSala.getNombreSala() : "desconocida") + ".");
-                }
-            } else {
-                remitente.enviarMensaje("ERROR: El usuario " + invitadoNombre + " no está conectado o el nombre de usuario no existe.");
-            }
-        }
-    }
-    public void responderInvitacion(UnCliente cliente, String respuesta) {
-        String usuario = cliente.getNombreUsuario();
-        String idSala = invitacionesPendientes.remove(usuario);
-
-        if (idSala == null) {
-            cliente.enviarMensaje("No tienes invitaciones pendientes.");
-            return;
-        }
-
-        SalaCoup sala = salasActivas.get(idSala);
-        if (sala == null) {
-            cliente.enviarMensaje("ERROR: La sala ya no existe.");
-            return;
-        }
-
-        String anfitrionNombre = sala.getJugadores().get(0).getNombreUsuario();
-        UnCliente remitente = puentesDeConexion.get(anfitrionNombre);
-
-        if (respuesta.equalsIgnoreCase("/si")) {
-
-            if (sala.isJuegoIniciado()) {
-                cliente.enviarMensaje("UPS, DEMASIADO TARDE: La partida ya fue iniciada en la sala " + sala.getNombreSala() + ".");
-                if (remitente != null) remitente.enviarMensaje("NOTIFICACIÓN: " + usuario + " intentó unirse, pero el juego ya estaba en curso.");
-                return;
-            }
-
-            if (sala.getJugadores().size() < MAX_JUGADORES) {
-                sala.agregarJugador(usuario);
-                jugadorEnSala.put(usuario, idSala);
-                mensajeGlobalEnSala(idSala, usuario + " se ha unido a la sala.");
-                cliente.enviarMensaje("Menú de Sala: /abandonar");
-
-                if (sala.getJugadores().size() >= MIN_JUGADORES) {
-                    cliente.enviarMensaje("La sala tiene " + sala.getJugadores().size() + "/" + MAX_JUGADORES + " jugadores. El creador de la sala puede usar /iniciar.");
-                }
-            } else {
-                cliente.enviarMensaje("ERROR: La sala está llena.");
-            }
-        } else if (respuesta.equalsIgnoreCase("/no")) {
-            cliente.enviarMensaje("Invitación rechazada.");
-            if (remitente != null) {
-                remitente.enviarMensaje("NOTIFICACIÓN: El usuario " + usuario + " rechazó tu invitación a la sala " + sala.getNombreSala() + ".");
-            }
-        }
-    }
-
 
     public void crearSala(UnCliente creador, String nombreDeseado) {
-        String usuario = creador.getNombreUsuario();
-        String idSalaActual = jugadorEnSala.get(usuario);
-
-        if (idSalaActual != null) {
-            SalaCoup salaActual = salasActivas.get(idSalaActual);
-            if (salaActual != null) {
-                creador.enviarMensaje("ERROR: Ya estás en la sala " + salaActual.getNombreSala() + " (ID: " + idSalaActual + ").");
-            }
-            return;
+        if (jugadorEnSala.containsKey(creador.getNombreUsuario())) {
+            creador.enviarMensaje("Ya estas en una sala."); return;
         }
+        generarYRegistrarSala(creador, nombreDeseado);
+    }
 
+    private void generarYRegistrarSala(UnCliente creador, String nombreDeseado) {
         String idSala = UUID.randomUUID().toString().substring(0, 5).toUpperCase();
+        String nombre = (nombreDeseado != null && !nombreDeseado.isBlank()) ? nombreDeseado.trim() : "Sala-"+idSala;
+        inicializarSala(idSala, nombre, creador);
+    }
 
-        String nombreSala = (nombreDeseado != null && !nombreDeseado.trim().isEmpty()) ?
-                nombreDeseado.trim() :
-                "Sala-" + idSala;
+    private void inicializarSala(String id, String nombre, UnCliente creador) {
+        SalaCoup sala = new SalaCoup(id, nombre);
+        sala.agregarJugador(creador.getNombreUsuario());
+        salasActivas.put(id, sala);
+        jugadorEnSala.put(creador.getNombreUsuario(), id);
+        estadosPorSala.put(id, new EstadoPartida());
+        notificarCreacion(creador, nombre, id);
+    }
 
-        SalaCoup nuevaSala = new SalaCoup(idSala, nombreSala);
-        nuevaSala.agregarJugador(usuario);
-
-        salasActivas.put(idSala, nuevaSala);
-        jugadorEnSala.put(usuario, idSala);
-        estadosPorSala.put(idSala, new EstadoPartida());
-
-        creador.enviarMensaje("SALA CREADA: " + nombreSala + " (ID: " + idSala + "). Jugadores: 1/" + MAX_JUGADORES + ".");
-        creador.enviarMensaje("Menú de Sala: /iniciar | /abandonar | /eliminar <usuario> | /invitar <usuario>");
+    private void notificarCreacion(UnCliente c, String nom, String id) {
+        c.enviarMensaje("SALA CREADA: " + nom + " (ID: " + id + ")");
+        c.enviarMensaje("Comandos: /iniciar, /invitar, /abandonar");
     }
 
     public void unirseASala(String idSala, UnCliente cliente) {
         SalaCoup sala = salasActivas.get(idSala);
-        if (sala != null && !sala.isJuegoIniciado()) {
-            if (sala.getJugadores().size() < MAX_JUGADORES) {
-                sala.agregarJugador(cliente.getNombreUsuario());
-                jugadorEnSala.put(cliente.getNombreUsuario(), idSala);
-                mensajeGlobalEnSala(idSala, cliente.getNombreUsuario() + " se ha unido a la sala " + sala.getNombreSala() + ".");
-                cliente.enviarMensaje("Menú de Sala: /abandonar");
-            } else {
-                cliente.enviarMensaje("ERROR: La sala " + sala.getNombreSala() + " está llena.");
-            }
-        } else {
-            cliente.enviarMensaje("ERROR: La sala " + idSala + " no existe o el juego ya ha comenzado.");
-        }
-    }
-    public void iniciarJuego(UnCliente cliente) {
-        String idSala = jugadorEnSala.get(cliente.getNombreUsuario());
-        SalaCoup sala = salasActivas.get(idSala);
-
-        if (sala == null) {
-            cliente.enviarMensaje("ERROR: No estás en una sala.");
-            return;
-        }
-
-        if (!cliente.getNombreUsuario().equals(sala.getJugadores().get(0).getNombreUsuario())) {
-            cliente.enviarMensaje("ERROR: Solo el creador de la sala puede iniciar la partida.");
-            return;
-        }
-        if (sala.getJugadores().size() < MIN_JUGADORES) {
-            cliente.enviarMensaje("ERROR: Se necesitan al menos " + MIN_JUGADORES + " jugadores para iniciar. Jugadores actuales: " + sala.getJugadores().size());
-            return;
-        }
-
-        arrancarJuego(sala);
+        if (validarUnion(sala, cliente)) ejecutarUnion(sala, cliente, idSala);
     }
 
-    private void arrancarJuego(SalaCoup sala) {
-        String idSala = sala.getIdSala();
-        String nombreSala = sala.getNombreSala();
-        try {
-            sala.iniciarPartida();
-            mensajeGlobalEnSala(idSala, "--- ¡PARTIDA INICIADA en la sala " + nombreSala + "! ---");
-
-            for (Jugador jLogico : sala.getJugadores()) {
-                UnCliente socketDestino = puentesDeConexion.get(jLogico.getNombreUsuario());
-                if (socketDestino != null) {
-                    enviarEstadoJugador(socketDestino, jLogico);
-                }
-            }
-            anunciarTurno(sala);
-        } catch (Exception e) {
-            mensajeGlobalEnSala(idSala, "Error al iniciar: " + e.getMessage());
+    private boolean validarUnion(SalaCoup sala, UnCliente c) {
+        if (sala == null || sala.isJuegoIniciado()) {
+            c.enviarMensaje("Sala no existe o juego iniciado."); return false;
         }
+        if (sala.getJugadores().size() >= MAX_JUGADORES) {
+            c.enviarMensaje("Sala llena."); return false;
+        }
+        return true;
     }
-    public synchronized void procesarJugada(UnCliente cliente, String comandoCompleto) {
+
+    private void ejecutarUnion(SalaCoup sala, UnCliente c, String id) {
+        sala.agregarJugador(c.getNombreUsuario());
+        jugadorEnSala.put(c.getNombreUsuario(), id);
+        mensajeGlobalEnSala(id, c.getNombreUsuario() + " se unio.");
+        c.enviarMensaje("Usa /abandonar para salir.");
+    }
+
+    public synchronized void procesarJugada(UnCliente cliente, String cmd) {
         SalaCoup sala = obtenerSala(cliente);
+        if (!validarJugadaActiva(sala, cliente)) return;
+        EstadoPartida estado = estadosPorSala.get(sala.getIdSala());
+        delegarFaseJuego(cliente, cmd, sala, estado);
+    }
 
+    private boolean validarJugadaActiva(SalaCoup sala, UnCliente c) {
         if (sala == null || !sala.isJuegoIniciado()) {
-            cliente.enviarMensaje("ERROR: No estás en una partida activa.");
-            return;
+            c.enviarMensaje("No estas en partida activa."); return false;
         }
-
-        EstadoPartida estado = obtenerEstado(sala.getIdSala());
-        if (estado == null) return;
-
-        if (estado.jugadorPendienteDeDescarte != null) {
-            procesarFaseDescarte(cliente, comandoCompleto, sala, estado);
-            return;
-        }
-
-        if (estado.accionPendiente != null) {
-            procesarFaseBloqueo(cliente, comandoCompleto, sala, estado);
-            return;
-        }
-
-        procesarFaseNormal(cliente, comandoCompleto, sala, estado);
+        return true;
     }
 
-    private void procesarFaseBloqueo(UnCliente cliente, String comandoCompleto, SalaCoup sala, EstadoPartida estado) {
-        String nombreJugador = cliente.getNombreUsuario();
-        String comando = comandoCompleto.toLowerCase();
-        String idSala = sala.getIdSala();
-
-        boolean esAyudaExterior = "TODOS".equals(estado.victimaPendiente) && "AYUDA".equals(estado.accionPendiente);
-
-        if (!esAyudaExterior && !nombreJugador.equals(estado.victimaPendiente)) {
-            cliente.enviarMensaje("SILENCIO: Solo " + estado.victimaPendiente + " puede responder.");
-            return;
-        }
-
-        if (nombreJugador.equals(estado.atacantePendiente)) {
-            cliente.enviarMensaje("No puedes bloquear tu propia acción.");
-            return;
-        }
-
-        if (comando.startsWith("/bloquear")) {
-            if (esAyudaExterior) {
-                mensajeGlobalEnSala(idSala, "¡BLOQUEO! " + nombreJugador + " dice tener al DUQUE y bloquea la Ayuda Exterior.");
-            } else {
-                mensajeGlobalEnSala(idSala, "¡BLOQUEO! " + nombreJugador + " bloqueó el ataque.");
-            }
-            estado.accionPendiente = null;
-            estado.atacantePendiente = null;
-            estado.victimaPendiente = null;
-            sala.siguienteTurno();
-            anunciarTurno(sala);
-            return;
-        }
-
-        if (comando.startsWith("/permitir")) {
-            mensajeGlobalEnSala(idSala, estado.victimaPendiente + " decidió NO bloquear.");
-
-            Jugador atacante = obtenerJugador(sala, estado.atacantePendiente);
-            String res = sala.ejecutarAccionPendiente(estado.accionPendiente, atacante, estado.victimaPendiente);
-
-            estado.accionPendiente = null;
-            estado.atacantePendiente = null;
-            estado.victimaPendiente = null;
-
-            manejarResultadoAccion(cliente, res, atacante, sala, estado);
-            return;
-        }
-
-        cliente.enviarMensaje("OPCIONES: Escribe '/permitir' para aceptar o '/bloquear <carta>' para defenderte.");
+    private void delegarFaseJuego(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        if (e.jugadorPendienteDeDescarte != null) procesarFaseDescarte(c, cmd, s, e);
+        else if (e.accionPendiente != null) procesarFaseBloqueo(c, cmd, s, e);
+        else procesarFaseNormal(c, cmd, s, e);
     }
 
-    private void procesarFaseNormal(UnCliente cliente, String comandoCompleto, SalaCoup sala, EstadoPartida estado) {
-        String nombreJugador = cliente.getNombreUsuario();
-        Jugador jugadorLogico = obtenerJugador(sala, nombreJugador);
-        String idSala = sala.getIdSala();
+    private void procesarFaseNormal(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        Jugador j = obtenerJugador(s, c.getNombreUsuario());
+        if (j == null) return;
+        String res = ejecutarAccionEnSala(s, j, cmd);
+        procesarResultadoAccion(c, res, s, e, j);
+    }
 
-        if (jugadorLogico == null) {
-            cliente.enviarMensaje("Error crítico: No estás en la lógica del juego.");
-            return;
-        }
-
-        String[] partes = comandoCompleto.split(" ");
+    private String ejecutarAccionEnSala(SalaCoup s, Jugador j, String cmd) {
+        String[] partes = cmd.split(" ");
         String accion = partes[0].toLowerCase();
-        String objetivo = (partes.length > 1) ? partes[1] : null;
+        String obj = (partes.length > 1) ? partes[1] : null;
+        return despacharAccion(s, j, accion, obj);
+    }
 
-        String resultado = "";
+    private String despacharAccion(SalaCoup s, Jugador j, String act, String obj) {
+        if (act.equals("ingreso")) return s.realizarAccionIngreso(j);
+        if (act.equals("ayuda")) return s.iniciarAccionAyudaExterior(j);
+        if (act.equals("golpe")) return (obj != null) ? s.realizarGolpeDeEstado(j, obj) : "ERROR: Falta objetivo";
+        return despacharAccionCompleja(s, j, act, obj);
+    }
 
-        switch (accion) {
-            case "ingreso": resultado = sala.realizarAccionIngreso(jugadorLogico); break;
-            case "ayuda": resultado = sala.iniciarAccionAyudaExterior(jugadorLogico); break;
-            case "impuestos": resultado = sala.realizarAccionImpuestos(jugadorLogico); break;
-            case "embajador": resultado = sala.realizarAccionEmbajador(jugadorLogico); break;
-            case "robar":
-                if (objetivo == null) resultado = "ERROR: Faltó objetivo.";
-                else resultado = sala.iniciarAccionRobar(jugadorLogico, objetivo);
-                break;
-            case "asesinar":
-                if (objetivo == null) resultado = "ERROR: Faltó objetivo.";
-                else resultado = sala.iniciarAccionAsesinato(jugadorLogico, objetivo);
-                break;
-            case "golpe":
-                if (objetivo == null) resultado = "ERROR: Faltó decir a quién dar golpe. Uso: /jugar golpe <nombre>";
-                else resultado = sala.realizarGolpeDeEstado(jugadorLogico, objetivo);
-                break;
-            default:
-                cliente.enviarMensaje("Acción desconocida. Comandos: ingreso, ayuda, impuestos, robar, asesinar, embajador, golpe.");
-                return;
+    private String despacharAccionCompleja(SalaCoup s, Jugador j, String act, String obj) {
+        if (act.equals("impuestos")) return s.realizarAccionImpuestos(j);
+        if (act.equals("embajador")) return s.realizarAccionEmbajador(j);
+        if (act.equals("robar")) return (obj!=null) ? s.iniciarAccionRobar(j, obj) : "ERROR: Falta objetivo";
+        if (act.equals("asesinar")) return (obj!=null) ? s.iniciarAccionAsesinato(j, obj) : "ERROR: Falta objetivo";
+        return "Accion desconocida.";
+    }
+
+    private void procesarResultadoAccion(UnCliente c, String res, SalaCoup s, EstadoPartida e, Jugador j) {
+        if (res.startsWith("INTENTO:")) iniciarDesafio(res, s, e, c.getNombreUsuario());
+        else if (res.startsWith("ESPERA_CARTA:")) iniciarDescarte(res, s, e);
+        else if (res.startsWith("ERROR")) c.enviarMensaje(res);
+        else finalizarTurnoNormal(s, res, c, j);
+    }
+
+    private void iniciarDesafio(String res, SalaCoup s, EstadoPartida e, String atacante) {
+        String[] datos = res.split(":");
+        configurarEstadoDesafio(e, datos[1], datos[2], atacante);
+        notificarDesafio(s.getIdSala(), atacante, e);
+    }
+
+    private void configurarEstadoDesafio(EstadoPartida e, String acc, String vic, String atq) {
+        e.accionPendiente = acc; e.victimaPendiente = vic; e.atacantePendiente = atq;
+    }
+
+    private void notificarDesafio(String idSala, String atq, EstadoPartida e) {
+        mensajeGlobalEnSala(idSala, ">>> " + atq + " quiere " + e.accionPendiente + " a " + e.victimaPendiente);
+        UnCliente v = puentesDeConexion.get(e.victimaPendiente);
+        if (v != null) v.enviarMensaje("Responde: /permitir o /bloquear <carta>");
+    }
+
+    private void finalizarTurnoNormal(SalaCoup s, String res, UnCliente c, Jugador j) {
+        mensajeGlobalEnSala(s.getIdSala(), res);
+        enviarEstadoJugador(c, j);
+        anunciarTurno(s);
+    }
+
+    private void procesarFaseBloqueo(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        if (!validarInteraccionBloqueo(c, e)) return;
+        if (cmd.startsWith("/bloquear")) ejecutarBloqueo(s, e, c.getNombreUsuario());
+        else if (cmd.startsWith("/permitir")) ejecutarPermitir(s, e);
+        else c.enviarMensaje("Opciones: /permitir o /bloquear <carta>");
+    }
+
+    private boolean validarInteraccionBloqueo(UnCliente c, EstadoPartida e) {
+        boolean esAyuda = "TODOS".equals(e.victimaPendiente) && "AYUDA".equals(e.accionPendiente);
+        if (!esAyuda && !c.getNombreUsuario().equals(e.victimaPendiente)) {
+            c.enviarMensaje("Espera tu turno."); return false;
         }
+        return true;
+    }
 
-        if (resultado.startsWith("INTENTO:")) {
-            String[] datos = resultado.split(":");
-            estado.accionPendiente = datos[1];
-            estado.victimaPendiente = datos[2];
-            estado.atacantePendiente = nombreJugador;
+    private void ejecutarBloqueo(SalaCoup s, EstadoPartida e, String quien) {
+        mensajeGlobalEnSala(s.getIdSala(), "¡BLOQUEO por " + quien + "!");
+        limpiarEstado(e);
+        s.siguienteTurno();
+        anunciarTurno(s);
+    }
 
-            mensajeGlobalEnSala(idSala, ">>> ¡ATAQUE! " + nombreJugador + " quiere " + estado.accionPendiente + " a " + estado.victimaPendiente + " <<<");
+    private void ejecutarPermitir(SalaCoup s, EstadoPartida e) {
+        mensajeGlobalEnSala(s.getIdSala(), e.victimaPendiente + " permitio la accion.");
+        String res = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
+        String atacantePrevio = e.atacantePendiente;
+        limpiarEstado(e);
+        if (res.startsWith("ESPERA_CARTA:")) iniciarDescarte(res, s, e);
+        else finalizarResolucionPermitida(s, res, atacantePrevio);
+    }
 
-            UnCliente clienteVictima = puentesDeConexion.get(estado.victimaPendiente);
-            if (clienteVictima != null) {
-                clienteVictima.enviarMensaje("¿Qué haces? Escribe: '/permitir' o '/bloquear <carta>'");
-            }
-        } else {
-            manejarResultadoAccion(cliente, resultado, jugadorLogico, sala, estado);
+    private void finalizarResolucionPermitida(SalaCoup s, String res, String atacante) {
+        mensajeGlobalEnSala(s.getIdSala(), res);
+        UnCliente c = puentesDeConexion.get(atacante);
+        if (c != null) enviarEstadoJugador(c, obtenerJugador(s, atacante));
+        anunciarTurno(s);
+    }
+
+    private void procesarFaseDescarte(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        if (!c.getNombreUsuario().equals(e.jugadorPendienteDeDescarte)) return;
+        if (!cmd.startsWith("descartar ")) { c.enviarMensaje("Usa: /jugar descartar <carta>"); return; }
+        ejecutarDescarte(c, cmd.split(" ")[1], s, e);
+    }
+
+    private void ejecutarDescarte(UnCliente c, String carta, SalaCoup s, EstadoPartida e) {
+        String res = s.concretarDescarte(c.getNombreUsuario(), carta);
+        if (res.startsWith("ERROR")) c.enviarMensaje(res);
+        else finalizarDescarte(s, e, c, res);
+    }
+
+    private void finalizarDescarte(SalaCoup s, EstadoPartida e, UnCliente c, String res) {
+        mensajeGlobalEnSala(s.getIdSala(), res);
+        e.jugadorPendienteDeDescarte = null;
+        enviarEstadoJugador(c, obtenerJugador(s, c.getNombreUsuario()));
+        anunciarTurno(s);
+    }
+
+    private void iniciarDescarte(String res, SalaCoup s, EstadoPartida e) {
+        String victima = res.split(":")[1];
+        e.jugadorPendienteDeDescarte = victima;
+        notificarNecesidadDescarte(s.getIdSala(), victima);
+    }
+
+    private void notificarNecesidadDescarte(String id, String victima) {
+        mensajeGlobalEnSala(id, victima + " debe perder una influencia.");
+        UnCliente c = puentesDeConexion.get(victima);
+        if (c != null) c.enviarMensaje("Pierdes un reto. Usa: /jugar descartar <carta>");
+    }
+
+    private void limpiarEstado(EstadoPartida e) {
+        e.accionPendiente = null; e.atacantePendiente = null; e.victimaPendiente = null;
+    }
+    private SalaCoup obtenerSala(UnCliente c) {
+        String nombre = c.getNombreUsuario();
+        String idSala = jugadorEnSala.get(nombre);
+        return salasActivas.get(idSala);
+    }
+     private Jugador obtenerJugador(SalaCoup s, String n) {
+        for(Jugador j : s.getJugadores()) if(j.getNombreUsuario().equals(n)) return j; return null;
+    }
+    private void mensajeGlobalEnSala(String id, String m) {
+        SalaCoup s = salasActivas.get(id);
+        if (s != null) for (Jugador j : s.getJugadores()) enviarAC(j.getNombreUsuario(), m);
+    }
+    private void enviarAC(String u, String m) { UnCliente c = puentesDeConexion.get(u); if(c!=null) c.enviarMensaje(m); }
+    private void enviarEstadoJugador(UnCliente c, Jugador j) {
+        c.enviarMensaje("Cartas: " + j.getManoActual() + " | Monedas: " + j.getMonedas());
+    }
+    private void anunciarTurno(SalaCoup s) {
+        Jugador act = s.getJugadorActivo();
+        if (act != null) for (Jugador j : s.getJugadores()) notificarTurnoIndividual(j, act, s.getNombreSala());
+    }
+    private void notificarTurnoIndividual(Jugador j, Jugador act, String sala) {
+        UnCliente c = puentesDeConexion.get(j.getNombreUsuario());
+        if (c == null) return;
+        if (j.equals(act)) c.enviarMensaje(">>> TU TURNO en " + sala + " <<<");
+        else c.enviarMensaje("Turno de " + act.getNombreUsuario());
+    }
+
+    public void mostrarSalasDisponibles(UnCliente c) {
+        if (salasActivas.isEmpty()) { c.enviarMensaje("No hay salas activas."); return; }
+        c.enviarMensaje("--- Salas ---");
+        salasActivas.values().forEach(s -> c.enviarMensaje("- " + s.getNombreSala()));
+    }
+
+    public String abandonarSala(String u) {
+        return eliminarJugador(u);
+    }
+
+    public void eliminarJugadorDeSala(UnCliente c, String v) {
+        SalaCoup s = obtenerSala(c);
+        if (s == null) { c.enviarMensaje("No estas en sala."); return; }
+        if (!s.getJugadores().get(0).getNombreUsuario().equals(c.getNombreUsuario())) { c.enviarMensaje("Solo administrador"); return; }
+        eliminarJugador(v);
+        mensajeGlobalEnSala(s.getIdSala(), "Admin eliminó a " + v);
+    }
+
+    public void invitarUsuarios(UnCliente c, String[] invs) {
+        SalaCoup s = obtenerSala(c);
+        if (s == null) { c.enviarMensaje("Sin sala."); return; }
+        for (String i : invs) enviarInvitacion(s, c, i);
+    }
+
+    private void enviarInvitacion(SalaCoup s, UnCliente remitente, String invitado) {
+        UnCliente c = puentesDeConexion.get(invitado);
+        if (c != null && !jugadorEnSala.containsKey(invitado)) {
+            invitacionesPendientes.put(invitado, s.getIdSala());
+            c.enviarMensaje("INVITACION de " + remitente.getNombreUsuario() + ". /si o /no");
         }
     }
 
-    private void procesarFaseDescarte(UnCliente cliente, String comandoCompleto, SalaCoup sala, EstadoPartida estado) {
-        String nombreJugador = cliente.getNombreUsuario();
-        String idSala = sala.getIdSala();
-
-        if (!nombreJugador.equals(estado.jugadorPendienteDeDescarte)) {
-            cliente.enviarMensaje("ESPERA: Estamos esperando que " + estado.jugadorPendienteDeDescarte + " descarte una carta.");
-            return;
-        }
-
-        if (!comandoCompleto.toLowerCase().startsWith("descartar ")) {
-            cliente.enviarMensaje("¡ACCIÓN REQUERIDA! Debes eliminar una influencia. Escribe: /jugar descartar <NombreCarta>");
-            return;
-        }
-
-        String carta = comandoCompleto.split(" ")[1];
-        String res = sala.concretarDescarte(nombreJugador, carta);
-
-        if (res.startsWith("ERROR")) {
-            cliente.enviarMensaje(res);
-        } else {
-            mensajeGlobalEnSala(idSala, res);
-            estado.jugadorPendienteDeDescarte = null;
-
-            Jugador j = obtenerJugador(sala, nombreJugador);
-            enviarEstadoJugador(cliente, j);
-
-            anunciarTurno(sala);
-        }
+    public void responderInvitacion(UnCliente c, String r) {
+        String id = invitacionesPendientes.remove(c.getNombreUsuario());
+        if (id == null) { c.enviarMensaje("Sin invitaciones."); return; }
+        if (r.equals("/si")) unirseASala(id, c);
+        else c.enviarMensaje("Rechazada.");
     }
 
-    private void manejarResultadoAccion(UnCliente cliente, String resultado, Jugador jugadorLogico, SalaCoup sala, EstadoPartida estado) {
-        String idSala = sala.getIdSala();
+    public void iniciarJuego(UnCliente c) {
+        SalaCoup s = obtenerSala(c);
+        if(s!=null && s.getJugadores().size()>=2) arrancarJuego(s);
+        else c.enviarMensaje("Faltan jugadores.");
+    }
 
-        if (resultado.startsWith("ERROR")) {
-            cliente.enviarMensaje(resultado);
-            return;
+    private void arrancarJuego(SalaCoup s) {
+        try { s.iniciarPartida(); mensajeGlobalEnSala(s.getIdSala(), "Iniciando..."); anunciarTurno(s); }
+        catch(Exception e) { mensajeGlobalEnSala(s.getIdSala(), "Error: "+e.getMessage()); }
+    }
+
+    public String eliminarJugador(String u) {
+        String id = jugadorEnSala.remove(u);
+        if (id != null) procesarSalida(id, u);
+        return "Saliste.";
+    }
+
+    private void procesarSalida(String id, String u) {
+        SalaCoup s = salasActivas.get(id);
+        if (s != null) {
+            s.removerJugador(u);
+            mensajeGlobalEnSala(id, u + " salió.");
+            if (s.getJugadores().isEmpty()) { salasActivas.remove(id); estadosPorSala.remove(id); }
         }
-        if (resultado.startsWith("ESPERA_CARTA:")) {
-            String victima = resultado.split(":")[1];
-            estado.jugadorPendienteDeDescarte = victima;
-
-            mensajeGlobalEnSala(idSala, "¡ATENCIÓN! " + victima + " ha sido impactado y debe perder una influencia.");
-
-            UnCliente clienteVictima = puentesDeConexion.get(victima);
-            if (clienteVictima != null) {
-                clienteVictima.enviarMensaje(">>> ¡TE HAN ATACADO! <<<");
-                clienteVictima.enviarMensaje("Debes elegir qué carta perder. Escribe: /jugar descartar <carta>");
-                clienteVictima.enviarMensaje("Tus opciones: " + obtenerJugador(sala, victima).getManoActual());
-            }
-            return;
-        }
-        mensajeGlobalEnSala(idSala, resultado);
-        enviarEstadoJugador(cliente, jugadorLogico);
-
-        anunciarTurno(sala);
     }
 }

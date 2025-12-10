@@ -228,7 +228,7 @@ public class GestorPartida {
         String idSala = jugadorEnSala.get(nombre);
         return salasActivas.get(idSala);
     }
-     private Jugador obtenerJugador(SalaCoup s, String n) {
+    private Jugador obtenerJugador(SalaCoup s, String n) {
         for(Jugador j : s.getJugadores()) if(j.getNombreUsuario().equals(n)) return j; return null;
     }
     private void mensajeGlobalEnSala(String id, String m) {
@@ -296,10 +296,18 @@ public class GestorPartida {
     }
 
     private void arrancarJuego(SalaCoup s) {
-        try { s.iniciarPartida(); mensajeGlobalEnSala(s.getIdSala(), "Iniciando..."); anunciarTurno(s); }
-        catch(Exception e) { mensajeGlobalEnSala(s.getIdSala(), "Error: "+e.getMessage()); }
+        try {
+            s.iniciarPartida();
+            mensajeGlobalEnSala(s.getIdSala(), "Iniciando...");
+            for (Jugador j : s.getJugadores()) {
+                UnCliente c = puentesDeConexion.get(j.getNombreUsuario());
+                if (c != null) enviarEstadoJugador(c, j);
+            }
+            anunciarTurno(s);
+        } catch(Exception e) {
+            mensajeGlobalEnSala(s.getIdSala(), "Error: "+e.getMessage());
+        }
     }
-
     public String eliminarJugador(String u) {
         String id = jugadorEnSala.remove(u);
         if (id != null) procesarSalida(id, u);

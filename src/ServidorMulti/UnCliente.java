@@ -5,6 +5,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.sql.SQLException;
+import java.util.Arrays;
 
 public class UnCliente implements Runnable {
     private final Socket socket;
@@ -23,12 +24,12 @@ public class UnCliente implements Runnable {
         this.salida = new DataOutputStream(s.getOutputStream());
         this.entrada = new DataInputStream(s.getInputStream());
     }
-
     public boolean isAutenticado() { return autenticado; }
     public String getNombreUsuario() { return nombreUsuario; }
 
     @Override
     public void run() {
+
         while (!socket.isClosed()) {
             try {
                 String mensaje = entrada.readUTF();
@@ -60,7 +61,7 @@ public class UnCliente implements Runnable {
     }
 
     private void manejarComando(String comandoCompleto) throws IOException, SQLException {
-        String[] partes = comandoCompleto.split(" ", 3);
+        String[] partes = comandoCompleto.split(" ", 4);
         String comando = partes[0].toLowerCase();
 
         switch (comando) {
@@ -70,23 +71,94 @@ public class UnCliente implements Runnable {
             case Constantes.CMD_REGISTER:
                 procesarRegistro(partes);
                 break;
-
-            case "/entrar":
-            case "/join":
+            case "/crear":
                 if (autenticado) {
-                    servidor.getGestorPartida().unirJugador(this);
+                    String nombreSala = (partes.length > 1) ? partes[1] : null;
+                    servidor.getGestorPartida().crearSala(this, nombreSala);
                 } else {
                     enviarMensaje("Debes iniciar sesion primero.");
                 }
                 break;
 
+            case "/unirse":
+                if (autenticado) {
+                    if (partes.length < 2) {
+                        enviarMensaje("Uso: /unirse <ID_Sala> o usa /salas para ver las disponibles.");
+                    } else {
+                        servidor.getGestorPartida().unirseASala(partes[1], this);
+                    }
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
+            case "/salas":
+                if (autenticado) {
+                    servidor.getGestorPartida().mostrarSalasDisponibles(this);
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
+            case "/abandonar":
+                if (autenticado) {
+                    String resultado = servidor.getGestorPartida().abandonarSala(this.nombreUsuario);
+                    enviarMensaje(resultado);
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
+            case "/eliminar":
+                if (autenticado) {
+                    if (partes.length < 2) {
+                        enviarMensaje("Uso: /eliminar <usuario>");
+                    } else {
+                        servidor.getGestorPartida().eliminarJugadorDeSala(this, partes[1]);
+                    }
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
+            case "/invitar":
+                if (autenticado) {
+                    if (partes.length < 2) {
+                        enviarMensaje("Uso: /invitar <usuario1> [usuario2]...");
+                        enviarMensaje("Usuarios conectados: " + servidor.getUsuariosConectados());
+                    } else {
+                        String cuerpoComando = comandoCompleto.substring(comandoCompleto.indexOf(' ') + 1);
+                        String[] invitados = cuerpoComando.split(" ");
+                        servidor.getGestorPartida().invitarUsuarios(this, invitados);
+                    }
+                } else {
+                    enviarMensaje("Debes iniciar sesion primero.");
+                }
+                break;
+
+            case "/si":
+            case "/no":
+                if (autenticado) {
+                    servidor.getGestorPartida().responderInvitacion(this, comando);
+                } else {
+                    enviarMensaje("Debes iniciar sesion para aceptar o rechazar invitaciones.");
+                }
+                break;
+
+            case "/iniciar":
+                if (autenticado) {
+                    servidor.getGestorPartida().iniciarJuego(this);
+                } else {
+                    enviarMensaje("Debes iniciar sesion para iniciar la partida.");
+                }
+                break;
             case "/jugar":
                 if (autenticado) {
                     if (partes.length < 2) {
                         enviarMensaje("Uso: /jugar <accion> (Ej: /jugar ingreso)");
                     } else {
-
-                        servidor.getGestorPartida().procesarJugada(this, partes[1]);
+                        String accionJuego = comandoCompleto.substring(comandoCompleto.indexOf(' ') + 1);
+                        servidor.getGestorPartida().procesarJugada(this, accionJuego);
                     }
                 } else {
                     enviarMensaje("Debes iniciar sesion primero.");
@@ -97,7 +169,7 @@ public class UnCliente implements Runnable {
                 cerrarConexion();
                 break;
             default:
-                enviarMensaje("Comando desconocido.");
+                enviarMensaje("Comando desconocido. Opciones de lobby: /crear, /unirse, /salas.");
         }
     }
 
@@ -117,7 +189,10 @@ public class UnCliente implements Runnable {
             if (servidor.registrarSesionActiva(usuario, claveCliente)) {
                 this.autenticado = true;
                 this.nombreUsuario = usuario;
+
                 enviarMensaje("Login exitoso. Hola " + usuario);
+                servidor.getGestorPartida().registrarCliente(this);
+
             } else {
                 enviarMensaje(Constantes.ERR_LOGIN_DUPLICADO);
             }
@@ -138,7 +213,7 @@ public class UnCliente implements Runnable {
     public void enviarMensaje(String msg) {
         try {
             salida.writeUTF(msg);
-        } catch (IOException e) { }
+        } catch (IOException e) { /* Ignorar si falla el envío */ }
     }
 
     private void cerrarConexion() {
@@ -147,6 +222,10 @@ public class UnCliente implements Runnable {
         } catch (IOException e) {
         } finally {
             servidor.eliminarCliente(claveCliente);
+
+            if (nombreUsuario != null) {
+                servidor.getGestorPartida().eliminarJugador(nombreUsuario);
+            }
         }
     }
 }

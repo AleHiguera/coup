@@ -122,8 +122,12 @@ public class UnCliente implements Runnable {
 
     private void procesarJuego(String cmd, String[] partes, String fullCmd) {
         if (!verificarAuth()) return;
-        if (partes.length < 2) enviarMensaje("Uso: /jugar <accion>");
-        else servidor.getGestorPartida().procesarJugada(this, fullCmd.substring(fullCmd.indexOf(' ') + 1));
+        if (partes.length < 2){
+            enviarMensaje("Faltan datos. Uso: /jugar <accion> [objetivo]");
+            return;
+        }
+        String argumentos = fullCmd.substring(fullCmd.indexOf(' ') + 1).trim();
+        servidor.getGestorPartida().procesarJugada(this, argumentos);
     }
 
     private void procesarUnirse(String[] partes) {

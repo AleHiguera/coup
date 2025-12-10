@@ -3,41 +3,63 @@ package JuegoCoup;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class SalaCoup {
+    private static final int MAX_JUGADORES = 6;
+    private final String idSala;
+    private final String nombreSala;
+
     private final List<Jugador> jugadores;
     private final Mazo mazo;
     private int indiceTurnoActual;
     private boolean juegoIniciado;
 
     public SalaCoup() {
+        this("default-" + System.currentTimeMillis(), "Sala Predeterminada");
+    }
+
+    public SalaCoup(String idSala) {
+        this(idSala, "Sala-" + idSala);
+    }
+
+    public SalaCoup(String idSala, String nombreSala) {
+        this.idSala = idSala;
+        this.nombreSala = nombreSala;
         this.jugadores = new ArrayList<>();
         this.mazo = new Mazo();
         this.indiceTurnoActual = 0;
         this.juegoIniciado = false;
     }
 
-    // --- GESTIÓN DE JUGADORES Y PARTIDA ---
-
     public boolean agregarJugador(String nombreUsuario) {
         if (juegoIniciado) {
             return false;
         }
-        if (jugadores.size() >= 6) {
+        if (jugadores.size() >= MAX_JUGADORES) {
             return false;
         }
-        for (Jugador j : jugadores) {
-            if (j.getNombreUsuario().equalsIgnoreCase(nombreUsuario)) return false;
+        if (jugadores.stream().anyMatch(j -> j.getNombreUsuario().equalsIgnoreCase(nombreUsuario))) {
+            return false;
         }
 
         Jugador nuevo = new Jugador(nombreUsuario);
         jugadores.add(nuevo);
         return true;
     }
+    public void removerJugador(String nombreUsuario) {
+        jugadores.removeIf(j -> j.getNombreUsuario().equalsIgnoreCase(nombreUsuario));
+        if (juegoIniciado && indiceTurnoActual >= jugadores.size()) {
+            indiceTurnoActual = 0;
+            if (!jugadores.isEmpty() && !getJugadorActivo().estaVivo()) {
+                siguienteTurno();
+            }
+        }
+    }
 
     public void iniciarPartida() {
-        if (jugadores.size() < 2) {
-            throw new IllegalStateException("Se necesitan mínimo 2 jugadores.");
+        if (jugadores.size() < 3) {
+            throw new IllegalStateException("Se necesitan mínimo 3 jugadores.");
         }
         juegoIniciado = true;
         mazo.barajar();
@@ -46,12 +68,11 @@ public class SalaCoup {
 
     private void repartirRecursosIniciales() {
         for (Jugador j : jugadores) {
+            // Se mantiene la lógica de reparto
             j.recibirCarta(mazo.robarCarta().orElseThrow());
             j.recibirCarta(mazo.robarCarta().orElseThrow());
         }
     }
-
-    // --- CONTROL DE TURNOS ---
 
     public Jugador getJugadorActivo() {
         if (jugadores.isEmpty()) return null;
@@ -60,7 +81,6 @@ public class SalaCoup {
 
     public void siguienteTurno() {
         if (jugadores.isEmpty()) return;
-
         int intentos = 0;
         do {
             indiceTurnoActual = (indiceTurnoActual + 1) % jugadores.size();
@@ -81,8 +101,6 @@ public class SalaCoup {
         return null;
     }
 
-    // --- ACCIONES GENERALES ---
-
     public String realizarAccionIngreso(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
 
@@ -93,16 +111,12 @@ public class SalaCoup {
 
     public String iniciarAccionAyudaExterior(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
-
-        // NO damos monedas todavía.
-        // Usamos "TODOS" como víctima porque cualquiera puede bloquear la Ayuda Exterior.
         return "INTENTO:AYUDA:TODOS";
     }
 
     public String realizarAccionAyudaExterior(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
 
-        // Lógica simplificada (sin bloqueo del Duque por ahora)
         jugador.ganarMonedas(2);
         siguienteTurno();
         return String.format("ACCION: %s usó Ayuda Exterior (+2 monedas).", jugador.getNombreUsuario());
@@ -163,8 +177,6 @@ public class SalaCoup {
         return "ERROR: Acción pendiente desconocida.";
     }
 
-    // --- ACCIONES DE PERSONAJES (CARTAS) ---
-
     // 1. DUQUE
     public String realizarAccionImpuestos(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
@@ -186,7 +198,7 @@ public class SalaCoup {
         if (victima.getMonedas() >= 2) {
             montoRobado = 2;
         } else {
-            montoRobado = victima.getMonedas(); // Roba lo que tenga
+            montoRobado = victima.getMonedas();
         }
 
         victima.pagar(montoRobado);
@@ -202,7 +214,6 @@ public class SalaCoup {
         if (victima == null || !victima.estaVivo()) return "ERROR: Objetivo inválido.";
         if (ladron.equals(victima)) return "ERROR: Auto-robo no permitido.";
 
-        // No robamos aún, solo validamos.
         return "INTENTO:ROBAR:" + victima.getNombreUsuario();
     }
 
@@ -228,8 +239,6 @@ public class SalaCoup {
 
         if (!asesino.pagar(3)) return "ERROR: No tienes 3 monedas.";
 
-        // Cobramos las monedas YA. Si lo bloquean, las pierde (Regla estricta).
-        // Retornamos señal de intento.
         return "INTENTO:ASESINAR:" + victima.getNombreUsuario();
     }
 
@@ -237,40 +246,26 @@ public class SalaCoup {
     public String realizarAccionEmbajador(Jugador jugador) {
         if (!esTurnoDe(jugador)) return "ERROR: No es tu turno.";
 
-        // Copia de la mano actual
         List<TipoCarta> manoTemporal = new ArrayList<>(jugador.getManoActual());
-
-        // Robar 2 cartas del mazo
         mazo.robarCarta().ifPresent(manoTemporal::add);
         mazo.robarCarta().ifPresent(manoTemporal::add);
-
-        // Barajar las opciones
         Collections.shuffle(manoTemporal);
 
-        // Determinar cuántas cartas debe quedarse el jugador (su vida actual)
         int cartasAConservar = jugador.getManoActual().size();
-
         List<TipoCarta> nuevaMano = new ArrayList<>();
 
-        // El jugador se queda con las primeras 'n' cartas (Aleatorio simplificado)
-        // En un juego real, aquí se le preguntaría al cliente cuáles quiere.
         for (int i = 0; i < cartasAConservar; i++) {
             nuevaMano.add(manoTemporal.remove(0));
         }
 
-        // Las sobrantes vuelven al mazo
         for (TipoCarta sobrante : manoTemporal) {
             mazo.devolverCarta(sobrante);
         }
 
-        // Actualizar la mano del jugador
         jugador.actualizarMano(nuevaMano);
-
         siguienteTurno();
         return String.format("EMBAJADOR: %s cambió sus cartas con el mazo.", jugador.getNombreUsuario());
     }
-
-    // --- GETTERS ---
 
     public boolean isJuegoIniciado() {
         return juegoIniciado;
@@ -278,5 +273,19 @@ public class SalaCoup {
 
     public List<Jugador> getJugadores() {
         return new ArrayList<>(jugadores);
+    }
+
+    // Getter de jugadores vivos (del Código 2)
+    public List<Jugador> getJugadoresVivos() {
+        return jugadores.stream()
+                .filter(Jugador::estaVivo)
+                .collect(Collectors.toList());
+    }
+    public String getIdSala() {
+        return idSala;
+    }
+
+    public String getNombreSala() {
+        return nombreSala;
     }
 }

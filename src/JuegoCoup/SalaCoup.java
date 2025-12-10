@@ -8,8 +8,10 @@ public class SalaCoup {
     private static final int MAX_JUGADORES = 6;
     private final String idSala;
     private final String nombreSala;
+
     private final List<Jugador> jugadores = new ArrayList<>();
     private final Mazo mazo = new Mazo();
+
     private int indiceTurnoActual = 0;
     private boolean juegoIniciado = false;
 
@@ -26,39 +28,47 @@ public class SalaCoup {
         return nombreSala;
     }
 
-    public List<Jugador> getJugadores() {
+    // --- ACCESO SEGURO A LA LISTA DE JUGADORES ---
+
+    public synchronized List<Jugador> getJugadores() {
         return new ArrayList<>(jugadores);
     }
 
-    public boolean isJuegoIniciado() {
+    public synchronized boolean isJuegoIniciado() {
         return juegoIniciado;
     }
 
-    public boolean agregarJugador(String nombre) {
+    // --- GESTIÓN DE JUGADORES (SYNCHRONIZED) ---
+
+    public synchronized boolean agregarJugador(String nombre) {
         if (juegoIniciado || jugadores.size() >= MAX_JUGADORES) {
             return false;
         }
-        if (buscarJugador(nombre) != null) {
+        if (buscarJugadorInterno(nombre) != null) {
             return false;
         }
         jugadores.add(new Jugador(nombre));
         return true;
     }
 
-    // --- ESTE ES EL MÉTODO QUE FALTABA ---
-    public void removerJugador(String nombreUsuario) {
-        jugadores.removeIf(j -> j.getNombreUsuario().equalsIgnoreCase(nombreUsuario));
-        if (juegoIniciado && indiceTurnoActual >= jugadores.size()) {
-            indiceTurnoActual = 0;
-            if (!jugadores.isEmpty() && !getJugadorActivo().estaVivo()) {
-                siguienteTurno();
+    public synchronized void removerJugador(String nombreUsuario) {
+        boolean estabaJugando = jugadores.removeIf(j -> j.getNombreUsuario().equalsIgnoreCase(nombreUsuario));
+
+        if (estabaJugando && juegoIniciado) {
+            if (indiceTurnoActual >= jugadores.size()) {
+                indiceTurnoActual = 0;
+            }
+            if (!jugadores.isEmpty()) {
+                if (!getJugadorActivo().estaVivo()) {
+                    siguienteTurno();
+                }
             }
         }
     }
 
-    public void iniciarPartida() {
-        if (jugadores.size() < 3) {
-            throw new IllegalStateException("Min 3 jugadores.");
+    public synchronized void iniciarPartida() {
+        if (jugadores.size() < 3) { //
+            throw new IllegalStateException("Min 2 jugadores.");
         }
         juegoIniciado = true;
         mazo.barajar();
@@ -72,111 +82,97 @@ public class SalaCoup {
         }
     }
 
-    public Jugador getJugadorActivo() {
+    // --- CONTROL DE TURNOS (SYNCHRONIZED) ---
+
+    public synchronized Jugador getJugadorActivo() {
         if (jugadores.isEmpty()) {
             return null;
+        }
+        if (indiceTurnoActual >= jugadores.size()) {
+            indiceTurnoActual = 0;
         }
         return jugadores.get(indiceTurnoActual);
     }
 
-    public void siguienteTurno() {
-        if (jugadores.isEmpty()) {
-            return;
-        }
+    public synchronized void siguienteTurno() {
+        if (jugadores.isEmpty()) return;
+
+        int intentos = 0;
         do {
             indiceTurnoActual = (indiceTurnoActual + 1) % jugadores.size();
-        } while (!getJugadorActivo().estaVivo());
+            intentos++;
+        } while (!jugadores.get(indiceTurnoActual).estaVivo() && intentos <= jugadores.size());
+    }
+
+    // --- MÉTODOS AUXILIARES INTERNOS ---
+    private Jugador buscarJugadorInterno(String n) {
+        for (Jugador j : jugadores) {
+            if (j.getNombreUsuario().equalsIgnoreCase(n)) return j;
+        }
+        return null;
     }
 
     private boolean validarTurno(Jugador j) {
-        return j != null && j.equals(getJugadorActivo());
+        Jugador activo = getJugadorActivo();
+        return activo != null && activo.getNombreUsuario().equals(j.getNombreUsuario());
     }
 
-    private Jugador buscarJugador(String n) {
-        return jugadores.stream().filter(j -> j.getNombreUsuario().equalsIgnoreCase(n)).findFirst().orElse(null);
-    }
+    // --- ACCIONES DEL JUEGO (TODAS SYNCHRONIZED) ---
+    // Esto evita que dos acciones ocurran simultáneamente y corrompan el estado
 
-    public String realizarAccionIngreso(Jugador j) {
-        if (!validarTurno(j)) {
-            return "ERROR: No es tu turno.";
-        }
+    public synchronized String realizarAccionIngreso(Jugador j) {
+        if (!validarTurno(j)) return "ERROR: No es tu turno.";
         j.ganarMonedas(1);
         siguienteTurno();
         return "ACCION: " + j.getNombreUsuario() + " tomó Ingreso.";
     }
 
-    public String iniciarAccionAyudaExterior(Jugador j) {
-        if (!validarTurno(j)) {
-            return "ERROR: Turno incorrecto.";
-        }
+    public synchronized String iniciarAccionAyudaExterior(Jugador j) {
+        if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
         return "INTENTO:AYUDA:TODOS";
     }
 
-    public String realizarAccionImpuestos(Jugador j) {
-        if (!validarTurno(j)) {
-            return "ERROR: Turno incorrecto.";
-        }
+    public synchronized String realizarAccionImpuestos(Jugador j) {
+        if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
         j.ganarMonedas(3);
         siguienteTurno();
         return "DUQUE: " + j.getNombreUsuario() + " cobró impuestos.";
     }
 
-    public String realizarGolpeDeEstado(Jugador atq, String nomVic) {
-        if (!validarTurno(atq)) {
-            return "ERROR: Turno incorrecto.";
-        }
-        if (!atq.pagar(7)) {
-            return "ERROR: Faltan monedas.";
-        }
+    public synchronized String realizarGolpeDeEstado(Jugador atq, String nomVic) {
+        if (!validarTurno(atq)) return "ERROR: Turno incorrecto.";
+        if (!atq.pagar(7)) return "ERROR: Faltan monedas.";
         return procesarAtaqueMortal(nomVic);
     }
 
     private String procesarAtaqueMortal(String nomVic) {
-        Jugador vic = buscarJugador(nomVic);
-        if (vic == null || !vic.estaVivo()) {
-            return "ERROR: Objetivo inválido.";
-        }
+        Jugador vic = buscarJugadorInterno(nomVic);
+        if (vic == null || !vic.estaVivo()) return "ERROR: Objetivo inválido.";
         return "ESPERA_CARTA:" + vic.getNombreUsuario();
     }
 
-    public String iniciarAccionAsesinato(Jugador asesino, String nomVic) {
-        if (!validarTurno(asesino)) {
-            return "ERROR: Turno incorrecto.";
-        }
-        if (!asesino.pagar(3)) {
-            return "ERROR: Faltan monedas.";
-        }
+    public synchronized String iniciarAccionAsesinato(Jugador asesino, String nomVic) {
+        if (!validarTurno(asesino)) return "ERROR: Turno incorrecto.";
+        if (!asesino.pagar(3)) return "ERROR: Faltan monedas.";
         return validarObjetivoYRetornar(nomVic, "INTENTO:ASESINAR:");
     }
 
-    public String iniciarAccionRobar(Jugador ladron, String nomVic) {
-        if (!validarTurno(ladron)) {
-            return "ERROR: Turno incorrecto.";
-        }
-        if (ladron.getNombreUsuario().equalsIgnoreCase(nomVic)) {
-            return "ERROR: Auto-robo.";
-        }
+    public synchronized String iniciarAccionRobar(Jugador ladron, String nomVic) {
+        if (!validarTurno(ladron)) return "ERROR: Turno incorrecto.";
+        if (ladron.getNombreUsuario().equalsIgnoreCase(nomVic)) return "ERROR: Auto-robo.";
         return validarObjetivoYRetornar(nomVic, "INTENTO:ROBAR:");
     }
 
     private String validarObjetivoYRetornar(String nomVic, String prefijo) {
-        Jugador vic = buscarJugador(nomVic);
-        if (vic == null || !vic.estaVivo()) {
-            return "ERROR: Objetivo inválido.";
-        }
+        Jugador vic = buscarJugadorInterno(nomVic);
+        if (vic == null || !vic.estaVivo()) return "ERROR: Objetivo inválido.";
         return prefijo + vic.getNombreUsuario();
     }
 
-    public String ejecutarAccionPendiente(String tipo, Jugador atq, String nomVic) {
-        if (tipo.equals("AYUDA")) {
-            return ejecutarAyuda(atq);
-        }
-        if (tipo.equals("ROBAR")) {
-            return ejecutarRobo(atq, nomVic);
-        }
-        if (tipo.equals("ASESINAR")) {
-            return "ESPERA_CARTA:" + nomVic;
-        }
+    public synchronized String ejecutarAccionPendiente(String tipo, Jugador atq, String nomVic) {
+        if (tipo.equals("AYUDA")) return ejecutarAyuda(atq);
+        if (tipo.equals("ROBAR")) return ejecutarRobo(atq, nomVic);
+        if (tipo.equals("ASESINAR")) return "ESPERA_CARTA:" + nomVic;
         return "ERROR: Acción desconocida.";
     }
 
@@ -187,7 +183,9 @@ public class SalaCoup {
     }
 
     private String ejecutarRobo(Jugador ladron, String nomVic) {
-        Jugador vic = buscarJugador(nomVic);
+        Jugador vic = buscarJugadorInterno(nomVic);
+        if (vic == null) return "ERROR: Víctima desapareció.";
+
         int monto = Math.min(vic.getMonedas(), 2);
         vic.pagar(monto);
         ladron.ganarMonedas(monto);
@@ -195,10 +193,8 @@ public class SalaCoup {
         return "EXITO: Robo de " + monto + " monedas.";
     }
 
-    public String realizarAccionEmbajador(Jugador j) {
-        if (!validarTurno(j)) {
-            return "ERROR: Turno incorrecto.";
-        }
+    public synchronized String realizarAccionEmbajador(Jugador j) {
+        if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
         intercambiarCartas(j);
         siguienteTurno();
         return "EMBAJADOR: Cartas cambiadas.";
@@ -206,8 +202,9 @@ public class SalaCoup {
 
     private void intercambiarCartas(Jugador j) {
         List<TipoCarta> temp = new ArrayList<>(j.getManoActual());
-        temp.add(mazo.robarCarta().orElse(null));
-        temp.add(mazo.robarCarta().orElse(null));
+        mazo.robarCarta().ifPresent(temp::add);
+        mazo.robarCarta().ifPresent(temp::add);
+
         Collections.shuffle(temp);
         restaurarMano(j, temp);
     }
@@ -215,22 +212,35 @@ public class SalaCoup {
     private void restaurarMano(Jugador j, List<TipoCarta> temp) {
         List<TipoCarta> nueva = new ArrayList<>();
         int count = j.getManoActual().size();
-        for (int i = 0; i < count; i++) {
-            nueva.add(temp.get(i));
+        int limite = Math.min(count, temp.size());
+
+        for (int i = 0; i < limite; i++) {
+            nueva.add(temp.remove(0));
         }
+        for (TipoCarta c : temp) {
+            mazo.devolverCarta(c);
+        }
+
         j.actualizarMano(nueva);
     }
 
-    public String concretarDescarte(String nom, String cartaStr) {
-        Jugador j = buscarJugador(nom);
+    public synchronized String concretarDescarte(String nom, String cartaStr) {
+        Jugador j = buscarJugadorInterno(nom);
+        if (j == null) return "ERROR: Jugador no encontrado.";
+
         try {
             TipoCarta c = TipoCarta.valueOf(cartaStr.toUpperCase());
             if (j.perderInfluencia(c)) {
                 siguienteTurno();
+
+                if (!j.estaVivo()) {
+                    return "ELIMINADO: " + nom + " ha perdido todas sus influencias.";
+                }
                 return "DESCARTE_OK: " + nom + " perdió " + cartaStr;
             }
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            return "ERROR: Esa carta no existe.";
         }
-        return "ERROR: Carta inválida.";
+        return "ERROR: No tienes esa carta.";
     }
 }

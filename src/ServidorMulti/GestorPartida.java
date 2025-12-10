@@ -9,27 +9,17 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class GestorPartida {
-
-    // ===================================================================
-    // ESTRUCTURAS DE DATOS GLOBALES (Multi-sala)
-    // ===================================================================
-
-    // Clase interna para guardar el estado del juego que antes era global (Código 1)
     private static class EstadoPartida {
         String jugadorPendienteDeDescarte = null;
         String atacantePendiente = null;
         String victimaPendiente = null;
         String accionPendiente = null;
     }
-
-    // Mapeo principal para la arquitectura multi-sala (Código 2)
-    private final Map<String, SalaCoup> salasActivas;          // ID de Sala -> Objeto SalaCoup
-    private final Map<String, String> jugadorEnSala;           // Nombre de Usuario -> ID de Sala
-    private final Map<String, UnCliente> puentesDeConexion;    // Nombre de Usuario -> Objeto UnCliente
-    private final Map<String, String> invitacionesPendientes;  // Destinatario -> ID_Sala
-
-    // Estado de la partida por sala (NUEVO: para conservar la lógica del Código 1)
-    private final Map<String, EstadoPartida> estadosPorSala; // ID de Sala -> EstadoPartida
+    private final Map<String, SalaCoup> salasActivas;
+    private final Map<String, String> jugadorEnSala;
+    private final Map<String, UnCliente> puentesDeConexion;
+    private final Map<String, String> invitacionesPendientes;
+    private final Map<String, EstadoPartida> estadosPorSala;
 
     private static final int MIN_JUGADORES = 3;
     private static final int MAX_JUGADORES = 6;
@@ -41,31 +31,21 @@ public class GestorPartida {
         this.invitacionesPendientes = new ConcurrentHashMap<>();
         this.estadosPorSala = new ConcurrentHashMap<>();
     }
-
-    // ===================================================================
-    // MÉTODOS DE UTILIDAD
-    // ===================================================================
-
-    // Obtener la SalaCoup
     private SalaCoup obtenerSala(UnCliente cliente) {
         String idSala = jugadorEnSala.get(cliente.getNombreUsuario());
         return salasActivas.get(idSala);
     }
 
-    // Obtener el estado pendiente de la Sala (NUEVO)
     private EstadoPartida obtenerEstado(String idSala) {
         return estadosPorSala.get(idSala);
     }
 
-    // Obtener el Jugador Logico de una sala
     private Jugador obtenerJugador(SalaCoup sala, String nombre) {
         for (Jugador j : sala.getJugadores()) {
             if (j.getNombreUsuario().equals(nombre)) return j;
         }
         return null;
     }
-
-    // MÉTODOS DE COMUNICACIÓN (Adaptados para la Sala)
 
     private void anunciarTurno(SalaCoup sala) {
         Jugador activo = sala.getJugadorActivo();
@@ -100,11 +80,6 @@ public class GestorPartida {
     private void enviarEstadoJugador(UnCliente cliente, Jugador j) {
         cliente.enviarMensaje("Tus Cartas: " + j.getManoActual() + " | Monedas: " + j.getMonedas());
     }
-
-    // -----------------------------------------------------------------
-    // LÓGICA DE CONEXIÓN Y LOBBY (CÓDIGO 2)
-    // -----------------------------------------------------------------
-
     public synchronized void registrarCliente(UnCliente clienteConexion) {
         String nombre = clienteConexion.getNombreUsuario();
         if (nombre != null && !puentesDeConexion.containsKey(nombre)) {
@@ -125,10 +100,9 @@ public class GestorPartida {
 
                 if (sala.getJugadores().isEmpty()) {
                     salasActivas.remove(idSala);
-                    estadosPorSala.remove(idSala); // Limpiar el estado de la partida
+                    estadosPorSala.remove(idSala);
                     System.out.println("Sala " + idSala + " eliminada por estar vacía.");
                 } else if (sala.isJuegoIniciado()) {
-                    // Si el juego está en curso, forzar el paso de turno
                     sala.siguienteTurno();
                     anunciarTurno(sala);
                 }
@@ -136,13 +110,6 @@ public class GestorPartida {
         }
     }
 
-    // ===================================================================
-    // MÉTODOS DE LOBBY Y GESTIÓN DE SALAS (IMPLEMENTACIONES AGREGADAS)
-    // ===================================================================
-
-    /**
-     * Muestra la lista de salas activas (no iniciadas o en curso) al cliente.
-     */
     public void mostrarSalasDisponibles(UnCliente cliente) {
         if (salasActivas.isEmpty()) {
             cliente.enviarMensaje("No hay salas activas. Usa /crear <nombre> para iniciar una.");
@@ -157,10 +124,6 @@ public class GestorPartida {
         });
         cliente.enviarMensaje(sb.toString());
     }
-
-    /**
-     * Permite al jugador salir de la sala en la que se encuentra.
-     */
     public String abandonarSala(String nombreUsuario) {
         String idSala = jugadorEnSala.get(nombreUsuario);
 
@@ -170,7 +133,6 @@ public class GestorPartida {
 
         SalaCoup sala = salasActivas.get(idSala);
 
-        // Usa el método centralizado para remover al jugador (eliminarJugador)
         eliminarJugador(nombreUsuario);
 
         if (sala != null && sala.isJuegoIniciado()) {
@@ -179,16 +141,11 @@ public class GestorPartida {
 
         return "SALA_ABANDONADA: Has salido de la sala.";
     }
-
-    /**
-     * Permite al creador de la sala eliminar a otro jugador antes de iniciar el juego.
-     */
     public void eliminarJugadorDeSala(UnCliente creador, String nombreVictima) {
         String creadorNombre = creador.getNombreUsuario();
         String idSala = jugadorEnSala.get(creadorNombre);
         SalaCoup sala = salasActivas.get(idSala);
 
-        // 1. Validaciones básicas de sala y anfitrión
         if (sala == null) {
             creador.enviarMensaje("ERROR: No estás en ninguna sala.");
             return;
@@ -206,10 +163,9 @@ public class GestorPartida {
             return;
         }
 
-        // 2. Ejecutar eliminación
         if (jugadorEnSala.containsKey(nombreVictima) && jugadorEnSala.get(nombreVictima).equals(idSala)) {
 
-            eliminarJugador(nombreVictima); // Llama al método que lo saca de la sala
+            eliminarJugador(nombreVictima);
 
             UnCliente clienteVictima = puentesDeConexion.get(nombreVictima);
             if (clienteVictima != null) {
@@ -222,10 +178,6 @@ public class GestorPartida {
             creador.enviarMensaje("ERROR: El usuario " + nombreVictima + " no está en tu sala.");
         }
     }
-
-    /**
-     * Procesa la invitación de uno o más usuarios a la sala del remitente.
-     */
     public void invitarUsuarios(UnCliente remitente, String[] invitados) {
         String remitenteNombre = remitente.getNombreUsuario();
         String idSala = jugadorEnSala.get(remitenteNombre);
@@ -268,10 +220,6 @@ public class GestorPartida {
             }
         }
     }
-
-    /**
-     * Procesa la respuesta (/si o /no) del cliente a una invitación pendiente.
-     */
     public void responderInvitacion(UnCliente cliente, String respuesta) {
         String usuario = cliente.getNombreUsuario();
         String idSala = invitacionesPendientes.remove(usuario);
@@ -342,7 +290,7 @@ public class GestorPartida {
 
         salasActivas.put(idSala, nuevaSala);
         jugadorEnSala.put(usuario, idSala);
-        estadosPorSala.put(idSala, new EstadoPartida()); // Inicializar estado de partida
+        estadosPorSala.put(idSala, new EstadoPartida());
 
         creador.enviarMensaje("SALA CREADA: " + nombreSala + " (ID: " + idSala + "). Jugadores: 1/" + MAX_JUGADORES + ".");
         creador.enviarMensaje("Menú de Sala: /iniciar | /abandonar | /eliminar <usuario> | /invitar <usuario>");
@@ -363,11 +311,6 @@ public class GestorPartida {
             cliente.enviarMensaje("ERROR: La sala " + idSala + " no existe o el juego ya ha comenzado.");
         }
     }
-
-    // -----------------------------------------------------------------
-    // LÓGICA DE INICIO (CÓDIGO 2 y MODIFICACIÓN DE REGLA)
-    // -----------------------------------------------------------------
-
     public void iniciarJuego(UnCliente cliente) {
         String idSala = jugadorEnSala.get(cliente.getNombreUsuario());
         SalaCoup sala = salasActivas.get(idSala);
@@ -377,13 +320,10 @@ public class GestorPartida {
             return;
         }
 
-        // Validación de creador
         if (!cliente.getNombreUsuario().equals(sala.getJugadores().get(0).getNombreUsuario())) {
             cliente.enviarMensaje("ERROR: Solo el creador de la sala puede iniciar la partida.");
             return;
         }
-
-        // REGLA MODIFICADA: Mínimo 3 jugadores
         if (sala.getJugadores().size() < MIN_JUGADORES) {
             cliente.enviarMensaje("ERROR: Se necesitan al menos " + MIN_JUGADORES + " jugadores para iniciar. Jugadores actuales: " + sala.getJugadores().size());
             return;
@@ -410,10 +350,6 @@ public class GestorPartida {
             mensajeGlobalEnSala(idSala, "Error al iniciar: " + e.getMessage());
         }
     }
-
-    // -----------------------------------------------------------------
-    // LÓGICA PRINCIPAL DEL JUEGO (CÓDIGO 1 - ADAPTADA A SALAS)
-    // -----------------------------------------------------------------
     public synchronized void procesarJugada(UnCliente cliente, String comandoCompleto) {
         SalaCoup sala = obtenerSala(cliente);
 
@@ -423,7 +359,7 @@ public class GestorPartida {
         }
 
         EstadoPartida estado = obtenerEstado(sala.getIdSala());
-        if (estado == null) return; // Error de estado
+        if (estado == null) return;
 
         if (estado.jugadorPendienteDeDescarte != null) {
             procesarFaseDescarte(cliente, comandoCompleto, sala, estado);
@@ -445,7 +381,6 @@ public class GestorPartida {
 
         boolean esAyudaExterior = "TODOS".equals(estado.victimaPendiente) && "AYUDA".equals(estado.accionPendiente);
 
-        // El resto de la lógica de bloqueo es idéntica al Código 1, usando las variables del objeto 'estado'
         if (!esAyudaExterior && !nombreJugador.equals(estado.victimaPendiente)) {
             cliente.enviarMensaje("SILENCIO: Solo " + estado.victimaPendiente + " puede responder.");
             return;
@@ -462,8 +397,6 @@ public class GestorPartida {
             } else {
                 mensajeGlobalEnSala(idSala, "¡BLOQUEO! " + nombreJugador + " bloqueó el ataque.");
             }
-
-            // Reiniciamos el estado
             estado.accionPendiente = null;
             estado.atacantePendiente = null;
             estado.victimaPendiente = null;
@@ -478,7 +411,6 @@ public class GestorPartida {
             Jugador atacante = obtenerJugador(sala, estado.atacantePendiente);
             String res = sala.ejecutarAccionPendiente(estado.accionPendiente, atacante, estado.victimaPendiente);
 
-            // Reiniciamos el estado
             estado.accionPendiente = null;
             estado.atacantePendiente = null;
             estado.victimaPendiente = null;
@@ -506,7 +438,6 @@ public class GestorPartida {
 
         String resultado = "";
 
-        // Switch idéntico al Código 1, pero usa la instancia 'sala'
         switch (accion) {
             case "ingreso": resultado = sala.realizarAccionIngreso(jugadorLogico); break;
             case "ayuda": resultado = sala.iniciarAccionAyudaExterior(jugadorLogico); break;
@@ -531,7 +462,6 @@ public class GestorPartida {
 
         if (resultado.startsWith("INTENTO:")) {
             String[] datos = resultado.split(":");
-            // Almacenar el estado en la instancia de la sala
             estado.accionPendiente = datos[1];
             estado.victimaPendiente = datos[2];
             estado.atacantePendiente = nombreJugador;
@@ -568,7 +498,7 @@ public class GestorPartida {
             cliente.enviarMensaje(res);
         } else {
             mensajeGlobalEnSala(idSala, res);
-            estado.jugadorPendienteDeDescarte = null; // Reiniciar estado
+            estado.jugadorPendienteDeDescarte = null;
 
             Jugador j = obtenerJugador(sala, nombreJugador);
             enviarEstadoJugador(cliente, j);
@@ -586,7 +516,7 @@ public class GestorPartida {
         }
         if (resultado.startsWith("ESPERA_CARTA:")) {
             String victima = resultado.split(":")[1];
-            estado.jugadorPendienteDeDescarte = victima; // Almacenar estado
+            estado.jugadorPendienteDeDescarte = victima;
 
             mensajeGlobalEnSala(idSala, "¡ATENCIÓN! " + victima + " ha sido impactado y debe perder una influencia.");
 

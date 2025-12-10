@@ -69,6 +69,7 @@ public class ServidorMulti implements IServidor {
     public void eliminarCliente(String claveCliente) {
         UnCliente cliente = clientes.remove(claveCliente);
         if (cliente != null) {
+            getGestorPartida().eliminarJugador(cliente.getNombreUsuario());
             removerSesionActiva(cliente.getNombreUsuario());
             System.out.println("Cliente " + claveCliente + " eliminado.");
         }
@@ -95,5 +96,10 @@ public class ServidorMulti implements IServidor {
             }
         }
         remitente.enviarMensaje("Error: Usuario '" + usuarioDestino + "' no encontrado o desconectado.");
+    }
+
+    @Override
+    public String getUsuariosConectados() {
+        return String.join(", ", usuariosActivos.keySet());
     }
 }

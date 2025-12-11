@@ -152,9 +152,9 @@ public class GestorPartida {
 
     private void notificarDesafio(String idSala, String atq, EstadoPartida e) {
         mensajeGlobalEnSala(idSala, ">>> " + atq + " quiere " + e.accionPendiente + " a " + e.victimaPendiente);
-        mensajeGlobalEnSala(idSala, "Esperando desafío o permiso...");
+        mensajeGlobalEnSala(idSala, "Cualquiera puede: /dudar");
         UnCliente v = puentesDeConexion.get(e.victimaPendiente);
-        if (v != null) v.enviarMensaje("Responde: /permitir o /bloquear");
+        if (v != null) v.enviarMensaje("Responde: /permitir, /bloquear o /dudar");
     }
 
     private void finalizarTurnoNormal(SalaCoup s, String res, UnCliente c, Jugador j) {
@@ -164,10 +164,40 @@ public class GestorPartida {
     }
 
     private void procesarFaseBloqueo(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        if (cmd.equalsIgnoreCase("/dudar")) {
+            if (c.getNombreUsuario().equals(e.atacantePendiente)) {
+                c.enviarMensaje("No puedes dudar de ti mismo.");
+                return;
+            }
+            ejecutarDuda(s, e, c.getNombreUsuario());
+            return;
+        }
+
         if (!validarInteraccionBloqueo(c, e)) return;
+
         if (cmd.startsWith("/bloquear")) ejecutarBloqueo(s, e, c.getNombreUsuario());
         else if (cmd.startsWith("/permitir")) ejecutarPermitir(s, e);
-        else c.enviarMensaje("Opciones: /permitir o /bloquear");
+        else c.enviarMensaje("Opciones: /permitir, /bloquear o /dudar");
+    }
+
+    private void ejecutarDuda(SalaCoup s, EstadoPartida e, String retador) {
+        String resultado = s.resolverDesafio(e.atacantePendiente, retador, e.accionPendiente);
+
+        if (resultado.startsWith("DESAFIO_EXITOSO:")) {
+            String acusado = resultado.split(":")[1];
+            mensajeGlobalEnSala(s.getIdSala(), "¡" + retador + " GANÓ! " + acusado + " mintió y pierde carta.");
+            iniciarDescarte("ESPERA_CARTA:" + acusado, s, e);
+        } else if (resultado.startsWith("DESAFIO_FALLIDO:")) {
+            String perdedor = resultado.split(":")[1];
+            mensajeGlobalEnSala(s.getIdSala(), "¡FALLASTE! " + e.atacantePendiente + " tenía la carta. " + perdedor + " pierde vida.");
+
+            String resAccion = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
+            mensajeGlobalEnSala(s.getIdSala(), "Acción continúa: " + resAccion);
+
+            iniciarDescarte("ESPERA_CARTA:" + perdedor, s, e);
+        } else {
+            mensajeGlobalEnSala(s.getIdSala(), resultado);
+        }
     }
 
     private boolean validarInteraccionBloqueo(UnCliente c, EstadoPartida e) {

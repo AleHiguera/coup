@@ -63,7 +63,7 @@ public class SalaCoup {
     }
 
     public synchronized void iniciarPartida() {
-        if (jugadores.size() < 2) {
+        if (jugadores.size() < 2) { //
             throw new IllegalStateException("Min 2 jugadores.");
         }
         juegoIniciado = true;
@@ -251,5 +251,46 @@ public class SalaCoup {
             return "ERROR: Esa carta no existe.";
         }
         return "ERROR: No tienes esa carta.";
+    }
+    public synchronized String resolverDesafio(String nombreAcusado, String nombreRetador, String accion) {
+        Jugador acusado = buscarJugadorInterno(nombreAcusado);
+        Jugador retador = buscarJugadorInterno(nombreRetador);
+
+        if (acusado == null || retador == null) return "ERROR: Jugadores inválidos.";
+
+        TipoCarta cartaRequerida = null;
+        switch (accion.toUpperCase()) {
+            case "IMPUESTOS": cartaRequerida = TipoCarta.DUQUE; break;
+            case "ROBAR": cartaRequerida = TipoCarta.CAPITAN; break;
+            case "ASESINAR": cartaRequerida = TipoCarta.ASESINO; break;
+            case "EMBAJADOR": cartaRequerida = TipoCarta.EMBAJADOR; break;
+        }
+
+        if (cartaRequerida == null) return "ERROR: Acción no desafiable.";
+
+        boolean tieneLaCarta = false;
+        for (TipoCarta c : acusado.getManoActual()) {
+            if (c == cartaRequerida) {
+                tieneLaCarta = true;
+                break;
+            }
+        }
+
+        if (tieneLaCarta) {
+
+            List<TipoCarta> mano = new ArrayList<>(acusado.getManoActual());
+            mano.remove(cartaRequerida);
+            mazo.devolverCarta(cartaRequerida);
+            mazo.barajar();
+            mazo.robarCarta().ifPresent(mano::add);
+            acusado.actualizarMano(mano);
+            return "DESAFIO_FALLIDO:" + nombreRetador;
+        } else {
+
+            if (accion.equals("ASESINAR")) {
+                acusado.ganarMonedas(3);
+            }
+            return "DESAFIO_EXITOSO:" + nombreAcusado;
+        }
     }
 }

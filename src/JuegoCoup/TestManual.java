@@ -24,6 +24,9 @@ public class TestManual {
             testGolpeDeEstadoObligatorio();
             System.out.println("✅ Test Golpe de Estado obligatorio: PASÓ");
 
+            testDesafioAccion();
+            System.out.println("✅ Test Regla de Desafío (Mentira y Verdad): PASÓ");
+
         } catch (Exception e) {
             System.err.println("\n🛑 ERROR CRÍTICO EN PRUEBAS: " + e.getMessage());
             e.printStackTrace();
@@ -114,5 +117,41 @@ public class TestManual {
         String res = sala.realizarGolpeDeEstado(rico, "Pobre");
         if (!res.startsWith("ESPERA_CARTA")) throw new RuntimeException("Golpe falló");
         if (rico.getMonedas() != 4) throw new RuntimeException("Cobro incorrecto");
+    }
+    private static void testDesafioAccion() {
+        SalaCoup sala = new SalaCoup("T6", "Sala Desafios");
+        sala.agregarJugador("Mentiroso");
+        sala.agregarJugador("Honesto");
+        sala.iniciarPartida();
+
+        Jugador mentiroso = sala.getJugadores().get(0);
+        List<TipoCarta> manoSinDuque = new ArrayList<>();
+        manoSinDuque.add(TipoCarta.CAPITAN);
+        manoSinDuque.add(TipoCarta.CONDESA);
+        mentiroso.actualizarMano(manoSinDuque);
+
+        sala.realizarAccionImpuestos(mentiroso);
+        String resMentira = sala.resolverDesafio("Mentiroso", "Honesto", "IMPUESTOS");
+
+        if (!resMentira.equals("DESAFIO_EXITOSO:Mentiroso")) {
+            throw new RuntimeException("Fallo: No detectó la mentira. Res: " + resMentira);
+        }
+
+        Jugador honesto = sala.getJugadores().get(1);
+        List<TipoCarta> manoConDuque = new ArrayList<>();
+        manoConDuque.add(TipoCarta.DUQUE);
+        manoConDuque.add(TipoCarta.ASESINO);
+        honesto.actualizarMano(manoConDuque);
+
+        sala.realizarAccionImpuestos(honesto);
+        String resVerdad = sala.resolverDesafio("Honesto", "Mentiroso", "IMPUESTOS");
+
+        if (!resVerdad.equals("DESAFIO_FALLIDO:Mentiroso")) {
+            throw new RuntimeException("Fallo: No validó la verdad. Res: " + resVerdad);
+        }
+
+        if (honesto.getManoActual().size() != 2) {
+            throw new RuntimeException("Fallo: El honesto perdió carta injustamente.");
+        }
     }
 }

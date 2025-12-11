@@ -152,8 +152,9 @@ public class GestorPartida {
 
     private void notificarDesafio(String idSala, String atq, EstadoPartida e) {
         mensajeGlobalEnSala(idSala, ">>> " + atq + " quiere " + e.accionPendiente + " a " + e.victimaPendiente);
+        mensajeGlobalEnSala(idSala, "Esperando desafío o permiso...");
         UnCliente v = puentesDeConexion.get(e.victimaPendiente);
-        if (v != null) v.enviarMensaje("Responde: /permitir o /bloquear <carta>");
+        if (v != null) v.enviarMensaje("Responde: /permitir o /bloquear");
     }
 
     private void finalizarTurnoNormal(SalaCoup s, String res, UnCliente c, Jugador j) {
@@ -166,7 +167,7 @@ public class GestorPartida {
         if (!validarInteraccionBloqueo(c, e)) return;
         if (cmd.startsWith("/bloquear")) ejecutarBloqueo(s, e, c.getNombreUsuario());
         else if (cmd.startsWith("/permitir")) ejecutarPermitir(s, e);
-        else c.enviarMensaje("Opciones: /permitir o /bloquear <carta>");
+        else c.enviarMensaje("Opciones: /permitir o /bloquear");
     }
 
     private boolean validarInteraccionBloqueo(UnCliente c, EstadoPartida e) {

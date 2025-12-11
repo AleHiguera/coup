@@ -28,8 +28,6 @@ public class SalaCoup {
         return nombreSala;
     }
 
-    // --- ACCESO SEGURO A LA LISTA DE JUGADORES ---
-
     public synchronized List<Jugador> getJugadores() {
         return new ArrayList<>(jugadores);
     }
@@ -37,8 +35,6 @@ public class SalaCoup {
     public synchronized boolean isJuegoIniciado() {
         return juegoIniciado;
     }
-
-    // --- GESTIÓN DE JUGADORES (SYNCHRONIZED) ---
 
     public synchronized boolean agregarJugador(String nombre) {
         if (juegoIniciado || jugadores.size() >= MAX_JUGADORES) {
@@ -67,7 +63,7 @@ public class SalaCoup {
     }
 
     public synchronized void iniciarPartida() {
-        if (jugadores.size() < 3) { //
+        if (jugadores.size() < 2) {
             throw new IllegalStateException("Min 2 jugadores.");
         }
         juegoIniciado = true;
@@ -81,8 +77,6 @@ public class SalaCoup {
             j.recibirCarta(mazo.robarCarta().orElseThrow());
         }
     }
-
-    // --- CONTROL DE TURNOS (SYNCHRONIZED) ---
 
     public synchronized Jugador getJugadorActivo() {
         if (jugadores.isEmpty()) {
@@ -104,7 +98,6 @@ public class SalaCoup {
         } while (!jugadores.get(indiceTurnoActual).estaVivo() && intentos <= jugadores.size());
     }
 
-    // --- MÉTODOS AUXILIARES INTERNOS ---
     private Jugador buscarJugadorInterno(String n) {
         for (Jugador j : jugadores) {
             if (j.getNombreUsuario().equalsIgnoreCase(n)) return j;
@@ -116,9 +109,6 @@ public class SalaCoup {
         Jugador activo = getJugadorActivo();
         return activo != null && activo.getNombreUsuario().equals(j.getNombreUsuario());
     }
-
-    // --- ACCIONES DEL JUEGO (TODAS SYNCHRONIZED) ---
-    // Esto evita que dos acciones ocurran simultáneamente y corrompan el estado
 
     public synchronized String realizarAccionIngreso(Jugador j) {
         if (!validarTurno(j)) return "ERROR: No es tu turno.";
@@ -134,9 +124,7 @@ public class SalaCoup {
 
     public synchronized String realizarAccionImpuestos(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
-        j.ganarMonedas(3);
-        siguienteTurno();
-        return "DUQUE: " + j.getNombreUsuario() + " cobró impuestos.";
+        return "INTENTO:IMPUESTOS:TODOS";
     }
 
     public synchronized String realizarGolpeDeEstado(Jugador atq, String nomVic) {
@@ -179,10 +167,18 @@ public class SalaCoup {
     }
 
     public synchronized String ejecutarAccionPendiente(String tipo, Jugador atq, String nomVic) {
+        if (tipo.equals("IMPUESTOS")) return ejecutarImpuestos(atq);
         if (tipo.equals("AYUDA")) return ejecutarAyuda(atq);
         if (tipo.equals("ROBAR")) return ejecutarRobo(atq, nomVic);
         if (tipo.equals("ASESINAR")) return "ESPERA_CARTA:" + nomVic;
+        if (tipo.equals("EMBAJADOR")) return ejecutarEmbajador(atq);
         return "ERROR: Acción desconocida.";
+    }
+
+    private String ejecutarImpuestos(Jugador j) {
+        j.ganarMonedas(3);
+        siguienteTurno();
+        return "EXITO: Impuestos cobrados (+3 monedas).";
     }
 
     private String ejecutarAyuda(Jugador j) {
@@ -204,9 +200,13 @@ public class SalaCoup {
 
     public synchronized String realizarAccionEmbajador(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
+        return "INTENTO:EMBAJADOR:TODOS";
+    }
+
+    private String ejecutarEmbajador(Jugador j) {
         intercambiarCartas(j);
         siguienteTurno();
-        return "EMBAJADOR: Cartas cambiadas.";
+        return "EXITO: Cartas cambiadas.";
     }
 
     private void intercambiarCartas(Jugador j) {

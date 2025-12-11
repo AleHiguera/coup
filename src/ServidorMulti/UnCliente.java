@@ -117,17 +117,20 @@ public class UnCliente implements Runnable {
     }
 
     private boolean esComandoJuego(String cmd) {
-        return cmd.equals("/jugar");
+
+        return cmd.equals("/jugar") || cmd.equals("/dudar") || cmd.equals("/permitir");
     }
 
     private void procesarJuego(String cmd, String[] partes, String fullCmd) {
         if (!verificarAuth()) return;
-        if (partes.length < 2){
-            enviarMensaje("Faltan datos. Uso: /jugar <accion> [objetivo]");
-            return;
+
+        if (cmd.equals("/jugar")) {
+            if (partes.length < 2) enviarMensaje("Uso: /jugar <accion>");
+            else servidor.getGestorPartida().procesarJugada(this, fullCmd.substring(fullCmd.indexOf(' ') + 1));
         }
-        String argumentos = fullCmd.substring(fullCmd.indexOf(' ') + 1).trim();
-        servidor.getGestorPartida().procesarJugada(this, argumentos);
+        else {
+            servidor.getGestorPartida().procesarJugada(this, fullCmd);
+        }
     }
 
     private void procesarUnirse(String[] partes) {
@@ -141,13 +144,8 @@ public class UnCliente implements Runnable {
     }
 
     private void procesarInvitar(String[] partes, String fullCmd) {
-        if (partes.length < 2) {
-            enviarMensaje("Uso: /invitar <usuario>");
-            return;
-        }
-
-        String listaUsuarios = fullCmd.substring(fullCmd.indexOf(' ') + 1).trim();
-        servidor.getGestorPartida().invitarUsuarios(this, listaUsuarios.split(" "));
+        if (partes.length < 2) enviarMensaje("Uso: /invitar <usuario>");
+        else servidor.getGestorPartida().invitarUsuarios(this, fullCmd.substring(fullCmd.indexOf(' ') + 1).split(" "));
     }
 
     private boolean verificarAuth() {

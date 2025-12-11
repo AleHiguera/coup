@@ -174,6 +174,11 @@ public class UnCliente implements Runnable {
     }
 
     private void procesarRegistro(String[] partes) throws SQLException {
+        if (autenticado) {
+            enviarMensaje("ERROR: Ya tienes una sesión activa (" + nombreUsuario + ").");
+            enviarMensaje("Debes salir (/exit) antes de registrar una cuenta nueva.");
+            return;
+        }
         if (partes.length < 3) { enviarMensaje("Uso: /register <user> <pass>"); return; }
         String res = servidor.getGestorUsuarios().registrarUsuario(partes[1], partes[2]);
         enviarMensaje(res.equals("REGISTRO_OK") ? "Registro exitoso." : res);

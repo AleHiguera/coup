@@ -16,46 +16,33 @@ public class TestManual {
             System.out.println("✅ Test Turnos y Eliminación: PASÓ");
 
             testDuqueCobraImpuestos();
-            System.out.println("✅ Test Duque (Impuestos): PASÓ");
+            System.out.println("✅ Test Duque (Fase Intento + Ejecución): PASÓ");
 
             testDescarteYMuerte();
             System.out.println("✅ Test Descarte y Muerte: PASÓ");
 
             testGolpeDeEstadoObligatorio();
-            System.out.println("✅ Test golpe de estado obligatorio: PASÓ");
-
+            System.out.println("✅ Test Golpe de Estado obligatorio: PASÓ");
 
         } catch (Exception e) {
-            System.err.println("\n ERROR CRÍTICO EN PRUEBAS: " + e.getMessage());
+            System.err.println("\n🛑 ERROR CRÍTICO EN PRUEBAS: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // 1. Prueba de Concurrencia (Simula 50 hilos entrando a la vez)
     private static void testAgregarJugadoresConcurrente() throws InterruptedException {
         SalaCoup sala = new SalaCoup("T1", "Sala Test");
         int numHilos = 50;
         List<Thread> hilos = new ArrayList<>();
-
         for (int i = 0; i < numHilos; i++) {
             int finalI = i;
-            Thread t = new Thread(() -> {
-                sala.agregarJugador("Jugador" + finalI);
-            });
+            Thread t = new Thread(() -> sala.agregarJugador("Jugador" + finalI));
             hilos.add(t);
             t.start();
         }
-
-        for (Thread t : hilos) {
-            t.join();
-        }
-
-        if (sala.getJugadores().size() > 6) {
-            throw new RuntimeException("Fallo de Concurrencia: Entraron " + sala.getJugadores().size() + " jugadores (Max permitido 6).");
-        }
+        for (Thread t : hilos) t.join();
+        if (sala.getJugadores().size() > 6) throw new RuntimeException("Fallo Concurrencia");
     }
-
-    // 2. Prueba de que el turno pasa si borras al jugador activo
     private static void testTurnosYEliminacion() {
         SalaCoup sala = new SalaCoup("T2", "Sala Turnos");
         sala.agregarJugador("A");
@@ -78,71 +65,54 @@ public class TestManual {
         }
     }
 
-    // 3. Prueba lógica del Duque
     private static void testDuqueCobraImpuestos() {
         SalaCoup sala = new SalaCoup("T3", "Sala Duque");
         sala.agregarJugador("J1");
         sala.agregarJugador("J2");
-        sala.agregarJugador("J3");
         sala.iniciarPartida();
 
         Jugador j1 = sala.getJugadorActivo();
         int monedasAntes = j1.getMonedas();
 
-        sala.realizarAccionImpuestos(j1);
+
+        String respuesta = sala.realizarAccionImpuestos(j1);
+        if (!respuesta.startsWith("INTENTO:IMPUESTOS")) {
+            throw new RuntimeException("El Duque debe devolver INTENTO. Recibido: " + respuesta);
+        }
+        if (j1.getMonedas() != monedasAntes) {
+            throw new RuntimeException("Error: Se dieron monedas antes de tiempo.");
+        }
+
+        sala.ejecutarAccionPendiente("IMPUESTOS", j1, "TODOS");
 
         if (j1.getMonedas() != monedasAntes + 3) {
-            throw new RuntimeException("El Duque no sumó 3 monedas. Tiene: " + j1.getMonedas());
+            throw new RuntimeException("El Duque no sumó 3 monedas tras ejecutar.");
         }
     }
 
-    // 4. Prueba de descarte y eliminación definitiva
     private static void testDescarteYMuerte() {
         SalaCoup sala = new SalaCoup("T4", "Sala Muerte");
-        sala.agregarJugador("Vic");
-        sala.agregarJugador("Atq");
-        sala.agregarJugador("Espectador");
+        sala.agregarJugador("Vic"); sala.agregarJugador("Atq");
         sala.iniciarPartida();
-
         Jugador victima = sala.getJugadores().get(0);
+        List<TipoCarta> mano = new ArrayList<>();
+        mano.add(TipoCarta.DUQUE); mano.add(TipoCarta.DUQUE);
+        victima.actualizarMano(mano);
 
-        // Trucamos la mano
-        List<TipoCarta> manoFalsa = new ArrayList<>();
-        manoFalsa.add(TipoCarta.DUQUE);
-        manoFalsa.add(TipoCarta.DUQUE);
-        victima.actualizarMano(manoFalsa);
-
-        // Perder primera vida
-        String res1 = sala.concretarDescarte("Vic", "DUQUE");
-        if (!victima.estaVivo() || victima.getManoActual().size() != 1) {
-            throw new RuntimeException("Fallo al perder primera vida.");
-        }
-
-        // Perder segunda vida
-        String res2 = sala.concretarDescarte("Vic", "DUQUE");
-        if (victima.estaVivo()) {
-            throw new RuntimeException("El jugador debería estar muerto y sigue vivo.");
-        }
+        sala.concretarDescarte("Vic", "DUQUE");
+        if (!victima.estaVivo() || victima.getManoActual().size() != 1) throw new RuntimeException("Fallo vida 1");
+        sala.concretarDescarte("Vic", "DUQUE");
+        if (victima.estaVivo()) throw new RuntimeException("Fallo muerte final");
     }
-    // 5.- Test de un golpe de estado obligatorio.
+
     private static void testGolpeDeEstadoObligatorio() {
         SalaCoup sala = new SalaCoup("T5", "Sala Golpe");
-        sala.agregarJugador("Rico");
-        sala.agregarJugador("Pobre");
-        sala.agregarJugador("Extra");
+        sala.agregarJugador("Rico"); sala.agregarJugador("Pobre");
         sala.iniciarPartida();
-
         Jugador rico = sala.getJugadorActivo();
-
         rico.ganarMonedas(9);
         String res = sala.realizarGolpeDeEstado(rico, "Pobre");
-
-        if (!res.startsWith("ESPERA_CARTA")) {
-            throw new RuntimeException("El Golpe no pidió carta inmediatamente.");
-        }
-
-        if (rico.getMonedas() != 4) { // 11 - 7 = 4
-            throw new RuntimeException("No se cobraron las 7 monedas correctamente.");
-        }
+        if (!res.startsWith("ESPERA_CARTA")) throw new RuntimeException("Golpe falló");
+        if (rico.getMonedas() != 4) throw new RuntimeException("Cobro incorrecto");
     }
 }

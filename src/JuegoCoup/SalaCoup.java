@@ -63,8 +63,8 @@ public class SalaCoup {
     }
 
     public synchronized void iniciarPartida() {
-        if (jugadores.size() < 2) { //
-            throw new IllegalStateException("Min 2 jugadores.");
+        if (jugadores.size() < 3) { //
+            throw new IllegalStateException("Min 3 jugadores.");
         }
         juegoIniciado = true;
         mazo.barajar();

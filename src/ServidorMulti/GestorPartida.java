@@ -2,7 +2,10 @@ package ServidorMulti;
 
 import JuegoCoup.Jugador;
 import JuegoCoup.SalaCoup;
+import JuegoCoup.TipoCarta;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,7 +18,37 @@ public class GestorPartida {
     private final Map<String, UnCliente> puentesDeConexion = new ConcurrentHashMap<>();
     private final Map<String, String> invitacionesPendientes = new ConcurrentHashMap<>();
     private final Map<String, EstadoPartida> estadosPorSala = new ConcurrentHashMap<>();
+
+    private final Map<String, Timer> timersPorSala = new ConcurrentHashMap<>();
+
     private static final int MIN_JUGADORES = 3, MAX_JUGADORES = 6;
+
+    private void iniciarTemporizador(String idSala, int segundos, Runnable accionExpiracion) {
+        cancelarTemporizador(idSala);
+        Timer timer = new Timer();
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+
+                synchronized (GestorPartida.this) {
+
+                    if (salasActivas.containsKey(idSala)) {
+                        accionExpiracion.run();
+                    }
+                    timersPorSala.remove(idSala);
+                }
+            }
+        }, segundos * 1000L);
+        timersPorSala.put(idSala, timer);
+    }
+
+
+    private void cancelarTemporizador(String idSala) {
+        Timer t = timersPorSala.remove(idSala);
+        if (t != null) {
+            t.cancel();
+        }
+    }
 
     public synchronized void registrarCliente(UnCliente c) {
         if (c.getNombreUsuario() != null && !puentesDeConexion.containsKey(c.getNombreUsuario())) {
@@ -76,6 +109,9 @@ public class GestorPartida {
     public synchronized void procesarJugada(UnCliente cliente, String cmd) {
         SalaCoup sala = obtenerSala(cliente);
         if (!validarJugadaActiva(sala, cliente)) return;
+
+        cancelarTemporizador(sala.getIdSala());
+
         EstadoPartida estado = estadosPorSala.get(sala.getIdSala());
         delegarFaseJuego(cliente, cmd, sala, estado);
     }
@@ -104,6 +140,8 @@ public class GestorPartida {
             c.enviarMensaje("⚠️ ¡REGLA DE ORO! Tienes " + j.getMonedas() + " monedas.");
             c.enviarMensaje("Estás OBLIGADO a dar un Golpe de Estado.");
             c.enviarMensaje("Uso: /jugar golpe <jugador>");
+
+            iniciarTemporizador(s.getIdSala(), 60, () -> forzarFinTurno(s));
             return;
         }
 
@@ -134,9 +172,14 @@ public class GestorPartida {
     }
 
     private void procesarResultadoAccion(UnCliente c, String res, SalaCoup s, EstadoPartida e, Jugador j) {
+        if (res.startsWith("ERROR")) {
+            c.enviarMensaje(res);
+            iniciarTemporizador(s.getIdSala(), 60, () -> forzarFinTurno(s));
+            return;
+        }
+
         if (res.startsWith("INTENTO:")) iniciarDesafio(res, s, e, c.getNombreUsuario());
         else if (res.startsWith("ESPERA_CARTA:")) iniciarDescarte(res, s, e);
-        else if (res.startsWith("ERROR")) c.enviarMensaje(res);
         else finalizarTurnoNormal(s, res, c, j);
     }
 
@@ -155,6 +198,12 @@ public class GestorPartida {
         mensajeGlobalEnSala(idSala, "Cualquiera puede: /dudar");
         UnCliente v = puentesDeConexion.get(e.victimaPendiente);
         if (v != null) v.enviarMensaje("Responde: /permitir, /bloquear o /dudar");
+
+        mensajeGlobalEnSala(idSala, "10 segundos para reaccionar...");
+        iniciarTemporizador(idSala, 10, () -> {
+            mensajeGlobalEnSala(idSala, "Tiempo agotado. Acción permitida tácitamente.");
+            ejecutarPermitir(salasActivas.get(idSala), e);
+        });
     }
 
     private void finalizarTurnoNormal(SalaCoup s, String res, UnCliente c, Jugador j) {
@@ -167,17 +216,33 @@ public class GestorPartida {
         if (cmd.equalsIgnoreCase("/dudar")) {
             if (c.getNombreUsuario().equals(e.atacantePendiente)) {
                 c.enviarMensaje("No puedes dudar de ti mismo.");
+                iniciarTemporizador(s.getIdSala(), 10, () -> {
+                    mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
+                    ejecutarPermitir(s, e);
+                });
                 return;
             }
             ejecutarDuda(s, e, c.getNombreUsuario());
             return;
         }
 
-        if (!validarInteraccionBloqueo(c, e)) return;
+        if (!validarInteraccionBloqueo(c, e)) {
+            iniciarTemporizador(s.getIdSala(), 10, () -> {
+                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
+                ejecutarPermitir(s, e);
+            });
+            return;
+        }
 
         if (cmd.startsWith("/bloquear")) ejecutarBloqueo(s, e, c.getNombreUsuario());
         else if (cmd.startsWith("/permitir")) ejecutarPermitir(s, e);
-        else c.enviarMensaje("Opciones: /permitir, /bloquear o /dudar");
+        else {
+            c.enviarMensaje("Opciones: /permitir, /bloquear o /dudar");
+            iniciarTemporizador(s.getIdSala(), 10, () -> {
+                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
+                ejecutarPermitir(s, e);
+            });
+        }
     }
 
     private void ejecutarDuda(SalaCoup s, EstadoPartida e, String retador) {
@@ -197,6 +262,10 @@ public class GestorPartida {
             iniciarDescarte("ESPERA_CARTA:" + perdedor, s, e);
         } else {
             mensajeGlobalEnSala(s.getIdSala(), resultado);
+            iniciarTemporizador(s.getIdSala(), 10, () -> {
+                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
+                ejecutarPermitir(s, e);
+            });
         }
     }
 
@@ -233,13 +302,18 @@ public class GestorPartida {
 
     private void procesarFaseDescarte(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
         if (!c.getNombreUsuario().equals(e.jugadorPendienteDeDescarte)) return;
-        if (!cmd.startsWith("descartar ")) { c.enviarMensaje("Usa: /jugar descartar <carta>"); return; }
+        if (!cmd.startsWith("descartar ")) {
+            c.enviarMensaje("Usa: /jugar descartar <carta>");
+            return;
+        }
         ejecutarDescarte(c, cmd.split(" ")[1], s, e);
     }
 
     private void ejecutarDescarte(UnCliente c, String carta, SalaCoup s, EstadoPartida e) {
         String res = s.concretarDescarte(c.getNombreUsuario(), carta);
-        if (res.startsWith("ERROR")) c.enviarMensaje(res);
+        if (res.startsWith("ERROR")) {
+            c.enviarMensaje(res);
+        }
         else finalizarDescarte(s, e, c, res);
     }
 
@@ -260,6 +334,19 @@ public class GestorPartida {
         mensajeGlobalEnSala(id, victima + " debe perder una influencia.");
         UnCliente c = puentesDeConexion.get(victima);
         if (c != null) c.enviarMensaje("Pierdes un reto. Usa: /jugar descartar <carta>");
+
+        mensajeGlobalEnSala(id, "Tienes 60s para descartar...");
+        iniciarTemporizador(id, 60, () -> {
+            mensajeGlobalEnSala(id, "Tiempo agotado. Se descarta automáticamente.");
+            SalaCoup sala = salasActivas.get(id);
+            Jugador j = obtenerJugador(sala, victima);
+            EstadoPartida est = estadosPorSala.get(id);
+            if (j != null && !j.getManoActual().isEmpty()) {
+                TipoCarta primeraCarta = j.getManoActual().get(0);
+                UnCliente clienteVic = puentesDeConexion.get(victima);
+                ejecutarDescarte(clienteVic, primeraCarta.name(), sala, est);
+            }
+        });
     }
 
     private void limpiarEstado(EstadoPartida e) {
@@ -284,7 +371,18 @@ public class GestorPartida {
     private void anunciarTurno(SalaCoup s) {
         Jugador act = s.getJugadorActivo();
         if (act != null) for (Jugador j : s.getJugadores()) notificarTurnoIndividual(j, act, s.getNombreSala());
+
+        mensajeGlobalEnSala(s.getIdSala(), "Turno de " + act.getNombreUsuario() + " (60s)");
+        iniciarTemporizador(s.getIdSala(), 60, () -> forzarFinTurno(s));
     }
+
+
+    private void forzarFinTurno(SalaCoup s) {
+        mensajeGlobalEnSala(s.getIdSala(), "TIEMPO DE TURNO AGOTADO. Se pasa el turno.");
+        s.siguienteTurno();
+        anunciarTurno(s);
+    }
+
     private void notificarTurnoIndividual(Jugador j, Jugador act, String sala) {
         UnCliente c = puentesDeConexion.get(j.getNombreUsuario());
         if (c == null) return;
@@ -351,8 +449,12 @@ public class GestorPartida {
         }
     }
     public String eliminarJugador(String u) {
-        String id = jugadorEnSala.remove(u);
-        if (id != null) procesarSalida(id, u);
+        String id = jugadorEnSala.get(u);
+        if (id != null && timersPorSala.containsKey(id)) {
+        }
+
+        String idRemovido = jugadorEnSala.remove(u);
+        if (idRemovido != null) procesarSalida(idRemovido, u);
         return "Saliste.";
     }
 
@@ -361,7 +463,11 @@ public class GestorPartida {
         if (s != null) {
             s.removerJugador(u);
             mensajeGlobalEnSala(id, u + " salió.");
-            if (s.getJugadores().isEmpty()) { salasActivas.remove(id); estadosPorSala.remove(id); }
+            if (s.getJugadores().isEmpty()) {
+                salasActivas.remove(id);
+                estadosPorSala.remove(id);
+                cancelarTemporizador(id);
+            }
         }
     }
 }

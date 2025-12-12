@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Jugador {
-    private final String nombreUsuario;
+    private String nombreUsuario;
     private int monedas;
     private final List<TipoCarta> mano; // Cartas ocultas
     private final List<TipoCarta> cartasPerdidas; // Cartas reveladas (influencias perdidas)
@@ -93,5 +93,9 @@ public class Jugador {
     public String toString() {
         return String.format("Jugador: %s | Monedas: %d | Influencias: %d",
                 nombreUsuario, monedas, mano.size());
+    }
+
+    public void setNombreUsuarioParaTest(String nuevoNombre) {
+        this.nombreUsuario = nuevoNombre;
     }
 }

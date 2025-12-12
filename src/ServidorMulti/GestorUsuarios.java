@@ -3,7 +3,6 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-// Importaciones requeridas para la validación de formato
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 

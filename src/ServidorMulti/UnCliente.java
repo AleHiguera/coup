@@ -154,7 +154,12 @@ public class UnCliente implements Runnable {
     }
 
     private void procesarLogin(String[] partes) throws SQLException {
-        if (autenticado) { enviarMensaje("Ya conectado."); return; }
+        if (autenticado) {
+            enviarMensaje("ERROR: Ya tienes una sesión activa como '" + nombreUsuario + "'.");
+            enviarMensaje("Debes cerrar la sesión actual con /exit antes de intentar un nuevo /login.");
+            return;
+        }
+
         if (partes.length < 3) { enviarMensaje("Uso: /login <user> <pass>"); return; }
         ejecutarLogin(partes[1], partes[2]);
     }
@@ -180,8 +185,14 @@ public class UnCliente implements Runnable {
             return;
         }
         if (partes.length < 3) { enviarMensaje("Uso: /register <user> <pass>"); return; }
+
         String res = servidor.getGestorUsuarios().registrarUsuario(partes[1], partes[2]);
-        enviarMensaje(res.equals("REGISTRO_OK") ? "Registro exitoso." : res);
+        if (res.equals("REGISTRO_OK")) {
+            enviarMensaje("Registro exitoso.");
+            enviarMensaje("Por favor, usa /login " + partes[1] + " <contrasena> para iniciar sesión.");
+        } else {
+            enviarMensaje(res);
+        }
     }
 
     public void enviarMensaje(String msg) {

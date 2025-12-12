@@ -161,26 +161,26 @@ public class GestorPartida {
         return despacharAccion(s, j, accion, obj);}
 
     private String despacharAccion(SalaCoup s, Jugador j, String act, String obj) {
-        if (act.equals("ingreso")) return s.realizarAccionIngreso(j);
-        if (act.equals("ayuda")) return s.iniciarAccionAyudaExterior(j);
-        if (act.equals("golpe")) return (obj != null) ? s.realizarGolpeDeEstado(j, obj) : "ERROR: Falta objetivo";
+        if (act.equals(Constantes.ACCION_INGRESO)) return s.realizarAccionIngreso(j);
+        if (act.equals(Constantes.ACCION_AYUDA)) return s.iniciarAccionAyudaExterior(j);
+        if (act.equals(Constantes.ACCION_GOLPE)) return (obj != null) ? s.realizarGolpeDeEstado(j, obj) : Constantes.PREFIJO_ERROR + " Falta objetivo";
         return despacharAccionCompleja(s, j, act, obj);}
 
     private String despacharAccionCompleja(SalaCoup s, Jugador j, String act, String obj) {
-        if (act.equals("impuestos")) return s.realizarAccionImpuestos(j);
-        if (act.equals("embajador")) return s.realizarAccionEmbajador(j);
-        if (act.equals("robar")) return (obj!=null) ? s.iniciarAccionRobar(j, obj) : "ERROR: Falta objetivo";
-        if (act.equals("asesinar")) return (obj!=null) ? s.iniciarAccionAsesinato(j, obj) : "ERROR: Falta objetivo";
+        if (act.equals(Constantes.ACCION_IMPUESTOS)) return s.realizarAccionImpuestos(j);
+        if (act.equals(Constantes.ACCION_EMBAJADOR)) return s.realizarAccionEmbajador(j);
+        if (act.equals(Constantes.ACCION_ROBAR)) return (obj!=null) ? s.iniciarAccionRobar(j, obj) : Constantes.PREFIJO_ERROR + " Falta objetivo";
+        if (act.equals(Constantes.ACCION_ASESINAR)) return (obj!=null) ? s.iniciarAccionAsesinato(j, obj) : Constantes.PREFIJO_ERROR + " Falta objetivo";
         return "Accion desconocida.";}
 
     private void procesarResultadoAccion(UnCliente c, String res, SalaCoup s, EstadoPartida e, Jugador j) {
-        if (res.startsWith("ERROR")) {
+        if (res.startsWith(Constantes.PREFIJO_ERROR)) {
             c.enviarMensaje(res);
             iniciarTemporizador(s.getIdSala(), 60, () -> forzarFinTurno(s));
             return;}
 
-        if (res.startsWith("INTENTO:")) iniciarDesafio(res, s, e, c.getNombreUsuario());
-        else if (res.startsWith("ESPERA_CARTA:")) iniciarDescarte(res, s, e);
+        if (res.startsWith(Constantes.PREFIJO_INTENTO)) iniciarDesafio(res, s, e, c.getNombreUsuario());
+        else if (res.startsWith(Constantes.PREFIJO_ESPERA)) iniciarDescarte(res, s, e);
         else finalizarTurnoNormal(s, res, c, j);
     }
 
@@ -246,18 +246,18 @@ public class GestorPartida {
     private void ejecutarDuda(SalaCoup s, EstadoPartida e, String retador) {
         String resultado = s.resolverDesafio(e.atacantePendiente, retador, e.accionPendiente);
 
-        if (resultado.startsWith("DESAFIO_EXITOSO:")) {
+        if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_EXITOSO)) {
             String acusado = resultado.split(":")[1];
             mensajeGlobalEnSala(s.getIdSala(), "¡" + retador + " GANÓ! " + acusado + " mintió y pierde carta.");
-            iniciarDescarte("ESPERA_CARTA:" + acusado, s, e);
-        } else if (resultado.startsWith("DESAFIO_FALLIDO:")) {
+            iniciarDescarte(Constantes.PREFIJO_ESPERA + acusado, s, e);
+        } else if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_FALLIDO)) {
             String perdedor = resultado.split(":")[1];
             mensajeGlobalEnSala(s.getIdSala(), "¡FALLASTE! " + e.atacantePendiente + " tenía la carta. " + perdedor + " pierde vida.");
 
             String resAccion = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
             mensajeGlobalEnSala(s.getIdSala(), "Acción continúa: " + resAccion);
 
-            iniciarDescarte("ESPERA_CARTA:" + perdedor, s, e);
+            iniciarDescarte(Constantes.PREFIJO_ESPERA + perdedor, s, e);
         } else {
             mensajeGlobalEnSala(s.getIdSala(), resultado);
             iniciarTemporizador(s.getIdSala(), 10, () -> {
@@ -321,7 +321,7 @@ public class GestorPartida {
 
         enviarEstadoJugador(c, jugadorEliminado);
 
-        if (res.startsWith("ELIMINADO:")) {
+        if (res.startsWith(Constantes.PREFIJO_ELIMINADO)) {
             c.enviarMensaje(MSG_ELIMINADO);
             jugadorEnSala.remove(c.getNombreUsuario());
             espectadorEnSala.put(c.getNombreUsuario(), s.getIdSala());

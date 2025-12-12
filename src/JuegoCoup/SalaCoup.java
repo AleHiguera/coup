@@ -3,6 +3,7 @@ package JuegoCoup;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import ServidorMulti.Constantes;
 
 public class SalaCoup {
     private static final int MAX_JUGADORES = 6;
@@ -119,12 +120,12 @@ public class SalaCoup {
 
     public synchronized String iniciarAccionAyudaExterior(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
-        return "INTENTO:AYUDA:TODOS";
+        return Constantes.PREFIJO_INTENTO + Constantes.ACCION_AYUDA + ":" + Constantes.OBJ_TODOS;
     }
 
     public synchronized String realizarAccionImpuestos(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
-        return "INTENTO:IMPUESTOS:TODOS";
+        return Constantes.PREFIJO_INTENTO + Constantes.ACCION_IMPUESTOS + ":" + Constantes.OBJ_TODOS;
     }
 
     public synchronized String realizarGolpeDeEstado(Jugador atq, String nomVic) {
@@ -139,25 +140,25 @@ public class SalaCoup {
             atq.ganarMonedas(7);
             return "ERROR: Objetivo inválido o eliminado.";
         }
-        return "ESPERA_CARTA:" + vic.getNombreUsuario();
+        return Constantes.PREFIJO_ESPERA + vic.getNombreUsuario();
     }
 
     private String procesarAtaqueMortal(String nomVic) {
         Jugador vic = buscarJugadorInterno(nomVic);
         if (vic == null || !vic.estaVivo()) return "ERROR: Objetivo inválido.";
-        return "ESPERA_CARTA:" + vic.getNombreUsuario();
+        return Constantes.PREFIJO_ESPERA + vic.getNombreUsuario();
     }
 
     public synchronized String iniciarAccionAsesinato(Jugador asesino, String nomVic) {
         if (!validarTurno(asesino)) return "ERROR: Turno incorrecto.";
         if (!asesino.pagar(3)) return "ERROR: Faltan monedas.";
-        return validarObjetivoYRetornar(nomVic, "INTENTO:ASESINAR:");
+        return validarObjetivoYRetornar(nomVic, Constantes.PREFIJO_INTENTO + Constantes.ACCION_ASESINAR + ":");
     }
 
     public synchronized String iniciarAccionRobar(Jugador ladron, String nomVic) {
         if (!validarTurno(ladron)) return "ERROR: Turno incorrecto.";
         if (ladron.getNombreUsuario().equalsIgnoreCase(nomVic)) return "ERROR: Auto-robo.";
-        return validarObjetivoYRetornar(nomVic, "INTENTO:ROBAR:");
+        return validarObjetivoYRetornar(nomVic, Constantes.PREFIJO_INTENTO + Constantes.ACCION_ROBAR + ":");
     }
 
     private String validarObjetivoYRetornar(String nomVic, String prefijo) {
@@ -167,24 +168,24 @@ public class SalaCoup {
     }
 
     public synchronized String ejecutarAccionPendiente(String tipo, Jugador atq, String nomVic) {
-        if (tipo.equals("IMPUESTOS")) return ejecutarImpuestos(atq);
-        if (tipo.equals("AYUDA")) return ejecutarAyuda(atq);
-        if (tipo.equals("ROBAR")) return ejecutarRobo(atq, nomVic);
-        if (tipo.equals("ASESINAR")) return "ESPERA_CARTA:" + nomVic;
-        if (tipo.equals("EMBAJADOR")) return ejecutarEmbajador(atq);
-        return "ERROR: Acción desconocida.";
+        if (tipo.equals(Constantes.ACCION_IMPUESTOS)) return ejecutarImpuestos(atq);
+        if (tipo.equals(Constantes.ACCION_AYUDA)) return ejecutarAyuda(atq);
+        if (tipo.equals(Constantes.ACCION_ROBAR)) return ejecutarRobo(atq, nomVic);
+        if (tipo.equals(Constantes.ACCION_ASESINAR)) return Constantes.PREFIJO_ESPERA + nomVic;
+        if (tipo.equals(Constantes.ACCION_EMBAJADOR)) return ejecutarEmbajador(atq);
+        return Constantes.PREFIJO_ERROR + " Acción desconocida.";
     }
 
     private String ejecutarImpuestos(Jugador j) {
         j.ganarMonedas(3);
         siguienteTurno();
-        return "EXITO: Impuestos cobrados (+3 monedas).";
+        return Constantes.PREFIJO_EXITO + " Impuestos cobrados (+3 monedas).";
     }
 
     private String ejecutarAyuda(Jugador j) {
         j.ganarMonedas(2);
         siguienteTurno();
-        return "EXITO: Ayuda Exterior completada.";
+        return Constantes.PREFIJO_EXITO + " Ayuda Exterior completada.";
     }
 
     private String ejecutarRobo(Jugador ladron, String nomVic) {
@@ -195,18 +196,18 @@ public class SalaCoup {
         vic.pagar(monto);
         ladron.ganarMonedas(monto);
         siguienteTurno();
-        return "EXITO: Robo de " + monto + " monedas.";
+        return Constantes.PREFIJO_EXITO + " Robo de " + monto + " monedas.";
     }
 
     public synchronized String realizarAccionEmbajador(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
-        return "INTENTO:EMBAJADOR:TODOS";
+        return Constantes.PREFIJO_INTENTO + Constantes.ACCION_EMBAJADOR + ":" + Constantes.OBJ_TODOS;
     }
 
     private String ejecutarEmbajador(Jugador j) {
         intercambiarCartas(j);
         siguienteTurno();
-        return "EXITO: Cartas cambiadas.";
+        return Constantes.PREFIJO_EXITO + " Cartas cambiadas.";
     }
 
     private void intercambiarCartas(Jugador j) {
@@ -243,20 +244,20 @@ public class SalaCoup {
                 siguienteTurno();
 
                 if (!j.estaVivo()) {
-                    return "ELIMINADO: " + nom + " ha perdido todas sus influencias.";
+                    return Constantes.PREFIJO_ELIMINADO + " " + nom + " ha perdido todas sus influencias.";
                 }
                 return "DESCARTE_OK: " + nom + " perdió " + cartaStr;
             }
         } catch (IllegalArgumentException e) {
-            return "ERROR: Esa carta no existe.";
+            return Constantes.PREFIJO_ERROR + " Esa carta no existe.";
         }
-        return "ERROR: No tienes esa carta.";
+        return  Constantes.PREFIJO_ERROR + " No tienes esa carta.";
     }
     public synchronized String resolverDesafio(String nombreAcusado, String nombreRetador, String accion) {
         Jugador acusado = buscarJugadorInterno(nombreAcusado);
         Jugador retador = buscarJugadorInterno(nombreRetador);
 
-        if (acusado == null || retador == null) return "ERROR: Jugadores inválidos.";
+        if (acusado == null || retador == null) return Constantes.PREFIJO_ERROR + " Jugadores inválidos.";
 
         TipoCarta cartaRequerida = null;
         switch (accion.toUpperCase()) {
@@ -266,7 +267,7 @@ public class SalaCoup {
             case "EMBAJADOR": cartaRequerida = TipoCarta.EMBAJADOR; break;
         }
 
-        if (cartaRequerida == null) return "ERROR: Acción no desafiable.";
+        if (cartaRequerida == null) return Constantes.PREFIJO_ERROR + " Acción no desafiable.";
 
         boolean tieneLaCarta = false;
         for (TipoCarta c : acusado.getManoActual()) {
@@ -284,13 +285,13 @@ public class SalaCoup {
             mazo.barajar();
             mazo.robarCarta().ifPresent(mano::add);
             acusado.actualizarMano(mano);
-            return "DESAFIO_FALLIDO:" + nombreRetador;
+            return Constantes.PREFIJO_DESAFIO_FALLIDO + nombreRetador;
         } else {
 
             if (accion.equals("ASESINAR")) {
                 acusado.ganarMonedas(3);
             }
-            return "DESAFIO_EXITOSO:" + nombreAcusado;
+            return Constantes.PREFIJO_DESAFIO_EXITOSO + nombreAcusado;
         }
     }
 

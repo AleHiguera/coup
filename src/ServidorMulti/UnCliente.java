@@ -81,6 +81,7 @@ public class UnCliente implements Runnable {
         if (esComandoAuth(comando)) procesarAuth(comando, partes);
         else if (esComandoSala(comando)) procesarSala(comando, partes, cmd);
         else if (esComandoJuego(comando)) procesarJuego(comando, partes, cmd);
+        else if (esComandoEspectador(comando)) procesarEspectador(comando, partes); // [NUEVO]
         else if (Constantes.CMD_EXIT.equals(comando)) cerrarConexion();
         else enviarMensaje("Comando desconocido.");
     }
@@ -214,5 +215,28 @@ public class UnCliente implements Runnable {
     private void limpiarSesion() {
         servidor.eliminarCliente(claveCliente);
         if (nombreUsuario != null) servidor.getGestorPartida().eliminarJugador(nombreUsuario);
+    }
+
+    private boolean esComandoEspectador(String cmd) {
+        return cmd.equals("/espectador") || cmd.equals("/espectador_quedarme");
+    }
+
+    private void procesarEspectador(String cmd, String[] partes) {
+        if (!verificarAuth()) return;
+
+        if (cmd.equals("/espectador")) {
+            procesarEspectadorLobby(partes);
+        } else if (cmd.equals("/espectador_quedarme")) {
+            servidor.getGestorPartida().procesarEleccionEliminado(this, cmd);
+        }
+    }
+
+    private void procesarEspectadorLobby(String[] partes) {
+        if (partes.length < 2) {
+            servidor.getGestorPartida().mostrarSalasParaEspectar(this);
+            enviarMensaje("Uso: /espectador <ID_Sala> para unirte.");
+        } else {
+            servidor.getGestorPartida().iniciarEspectadorDesdeLobby(this, partes[1]);
+        }
     }
 }

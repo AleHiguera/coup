@@ -81,20 +81,32 @@ public class GestorPartida {
 
     private void notificarCreacion(UnCliente c, String nom, String id) {
         c.enviarMensaje("SALA CREADA: " + nom + " (ID: " + id + ")");
-        c.enviarMensaje("Comandos: /iniciar, /invitar, /abandonar");
+        c.enviarMensaje("Comandos: /iniciar, /invitar, /abandonar, /eliminar");
     }
-
-    public void unirseASala(String idSala, UnCliente cliente) {
+    public boolean unirseASala(String idSala, UnCliente cliente) {
         SalaCoup sala = salasActivas.get(idSala);
-        if (validarUnion(sala, cliente)) ejecutarUnion(sala, cliente, idSala);
-    }
-
-    private boolean validarUnion(SalaCoup sala, UnCliente c) {
-        if (sala == null || sala.isJuegoIniciado()) {
-            c.enviarMensaje("Sala no existe o juego iniciado."); return false;
+        if (validarUnion(sala, cliente)) {
+            ejecutarUnion(sala, cliente, idSala);
+            return true;
         }
+        return false;
+    }
+    private boolean validarUnion(SalaCoup sala, UnCliente c) {
+        if (sala == null) {
+            c.enviarMensaje("Sala no existe.");
+            c.enviarMensaje("Opciones: /crear, /unirse, /salas");
+            return false;
+        }
+        if (sala.isJuegoIniciado()) {
+            c.enviarMensaje("UPS, demasiado tarde. Esta sala ya inició.");
+            c.enviarMensaje("Opciones: /crear, /unirse, /salas");
+            return false;
+        }
+
         if (sala.getJugadores().size() >= MAX_JUGADORES) {
-            c.enviarMensaje("Sala llena."); return false;
+            c.enviarMensaje("Sala llena.");
+            c.enviarMensaje("Opciones: /crear, /unirse, /salas");
+            return false;
         }
         return true;
     }
@@ -137,7 +149,7 @@ public class GestorPartida {
         String accion = partes[0].toLowerCase();
 
         if (j.getMonedas() >= 10 && !accion.equals("golpe")) {
-            c.enviarMensaje("⚠️ ¡REGLA DE ORO! Tienes " + j.getMonedas() + " monedas.");
+            c.enviarMensaje("¡REGLA DE ORO! Tienes " + j.getMonedas() + " monedas.");
             c.enviarMensaje("Estás OBLIGADO a dar un Golpe de Estado.");
             c.enviarMensaje("Uso: /jugar golpe <jugador>");
 
@@ -413,22 +425,51 @@ public class GestorPartida {
         if (s == null) { c.enviarMensaje("Sin sala."); return; }
         for (String i : invs) enviarInvitacion(s, c, i);
     }
-
     private void enviarInvitacion(SalaCoup s, UnCliente remitente, String invitado) {
+        if (remitente.getNombreUsuario().equalsIgnoreCase(invitado)) {
+            remitente.enviarMensaje("ERROR: No puedes invitarte a ti mismo.");
+            return;
+        }
+
         UnCliente c = puentesDeConexion.get(invitado);
-        if (c != null && !jugadorEnSala.containsKey(invitado)) {
+
+        if (c != null) {
+            if (jugadorEnSala.containsKey(invitado)) {
+                remitente.enviarMensaje("ERROR: " + invitado + " ya está en una sala.");
+                return;
+            }
+
             invitacionesPendientes.put(invitado, s.getIdSala());
-            c.enviarMensaje("INVITACION de " + remitente.getNombreUsuario() + ". /si o /no");
+            c.enviarMensaje("INVITACION de " + remitente.getNombreUsuario() + " para unirte a la sala " + s.getNombreSala() + ". Usa /si o /no.");
+            remitente.enviarMensaje("INVITACIÓN ENVIADA a " + invitado + ".");
+        } else {
+            remitente.enviarMensaje("ERROR: El usuario " + invitado + " no está conectado o no existe.");
         }
     }
-
     public void responderInvitacion(UnCliente c, String r) {
         String id = invitacionesPendientes.remove(c.getNombreUsuario());
-        if (id == null) { c.enviarMensaje("Sin invitaciones."); return; }
-        if (r.equals("/si")) unirseASala(id, c);
-        else c.enviarMensaje("Rechazada.");
-    }
+        if (id == null) { c.enviarMensaje("Sin invitaciones pendientes."); return; }
 
+        SalaCoup sala = salasActivas.get(id);
+        if (sala == null) {
+            c.enviarMensaje("ERROR: La sala de la invitación ya no existe.");
+            return;
+        }
+
+        if (r.equals("/si")) {
+            boolean unido = unirseASala(id, c);
+
+            if (unido) {
+                c.enviarMensaje("¡Unión exitosa! ID de la sala para compartir: " + id);
+                mensajeGlobalEnSala(id, c.getNombreUsuario() + " aceptó la invitación y se unió a la sala.");
+            } else {
+                mensajeGlobalEnSala(id, c.getNombreUsuario() + " intentó unirse, pero el juego ya había comenzado o la sala estaba llena.");
+            }
+        } else {
+            c.enviarMensaje("Rechazada.");
+            mensajeGlobalEnSala(id,  c.getNombreUsuario() + " rechazó la invitación.");
+        }
+    }
     public void iniciarJuego(UnCliente c) {
         SalaCoup s = obtenerSala(c);
         if(s!=null && s.getJugadores().size()>=2) arrancarJuego(s);

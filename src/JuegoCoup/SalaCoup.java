@@ -262,42 +262,41 @@ public class SalaCoup {
         }
         return  Constantes.PREFIJO_ERROR + " No tienes esa carta.";
     }
-    public synchronized String resolverDesafio(String nombreAcusado, String nombreRetador, String accion) {
+    public synchronized String resolverDesafio(String nombreAcusado, String nombreRetador, String accionOContexto) {
         Jugador acusado = buscarJugadorInterno(nombreAcusado);
         Jugador retador = buscarJugadorInterno(nombreRetador);
 
         if (acusado == null || retador == null) return Constantes.PREFIJO_ERROR + " Jugadores inválidos.";
 
         TipoCarta cartaRequerida = null;
-        switch (accion.toUpperCase()) {
-            case "IMPUESTOS": cartaRequerida = TipoCarta.DUQUE; break;
-            case "ROBAR": cartaRequerida = TipoCarta.CAPITAN; break;
-            case "ASESINAR": cartaRequerida = TipoCarta.ASESINO; break;
-            case "EMBAJADOR": cartaRequerida = TipoCarta.EMBAJADOR; break;
+
+        switch (accionOContexto.toUpperCase()) {
+            case Constantes.ACCION_IMPUESTOS: cartaRequerida = TipoCarta.DUQUE; break;
+            case Constantes.ACCION_ROBAR:     cartaRequerida = TipoCarta.CAPITAN; break;
+            case Constantes.ACCION_ASESINAR:  cartaRequerida = TipoCarta.ASESINO; break;
+            case Constantes.ACCION_EMBAJADOR: cartaRequerida = TipoCarta.EMBAJADOR; break;
+
+            case "BLOQUEO_AYUDA":           cartaRequerida = TipoCarta.DUQUE; break;
+            case "BLOQUEO_ASESINATO":       cartaRequerida = TipoCarta.CONDESA; break;
+            case "BLOQUEO_ROBO_CAPITAN":    cartaRequerida = TipoCarta.CAPITAN; break;
+            case "BLOQUEO_ROBO_EMBAJADOR":  cartaRequerida = TipoCarta.EMBAJADOR; break;
         }
 
         if (cartaRequerida == null) return Constantes.PREFIJO_ERROR + " Acción no desafiable.";
 
-        boolean tieneLaCarta = false;
-        for (TipoCarta c : acusado.getManoActual()) {
-            if (c == cartaRequerida) {
-                tieneLaCarta = true;
-                break;
-            }
-        }
+        boolean tieneLaCarta = acusado.getManoActual().contains(cartaRequerida);
 
         if (tieneLaCarta) {
-
             List<TipoCarta> mano = new ArrayList<>(acusado.getManoActual());
             mano.remove(cartaRequerida);
             mazo.devolverCarta(cartaRequerida);
             mazo.barajar();
             mazo.robarCarta().ifPresent(mano::add);
             acusado.actualizarMano(mano);
+
             return Constantes.PREFIJO_DESAFIO_FALLIDO + nombreRetador;
         } else {
-
-            if (accion.equals("ASESINAR")) {
+            if (accionOContexto.equals(Constantes.ACCION_ASESINAR)) {
                 acusado.ganarMonedas(3);
             }
             return Constantes.PREFIJO_DESAFIO_EXITOSO + nombreAcusado;

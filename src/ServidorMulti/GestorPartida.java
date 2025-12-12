@@ -12,6 +12,8 @@ public class GestorPartida {
         String jugadorPendienteDeDescarte, atacantePendiente, victimaPendiente, accionPendiente;
         boolean segundaMuertePendiente = false;
         List<TipoCarta> cartasEmbajadorPendientes;
+        String bloqueador;
+        String declaracionBloqueo;
     }
 
     private final Map<String, SalaCoup> salasActivas = new ConcurrentHashMap<>();
@@ -215,67 +217,103 @@ public class GestorPartida {
 
     private void procesarFaseBloqueo(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
         if (cmd.equalsIgnoreCase("/dudar")) {
-            if (c.getNombreUsuario().equals(e.atacantePendiente)) {
-                c.enviarMensaje("No puedes dudar de ti mismo.");
-                iniciarTemporizador(s.getIdSala(), 10, () -> {
-                    mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
-                    ejecutarPermitir(s, e);
-                });
+            if (e.declaracionBloqueo != null && c.getNombreUsuario().equals(e.bloqueador)) {
+                c.enviarMensaje("No puedes dudar de tu propio bloqueo.");
                 return;
             }
             ejecutarDuda(s, e, c.getNombreUsuario());
             return;
         }
-
         if (!validarInteraccionBloqueo(c, e)) {
-            iniciarTemporizador(s.getIdSala(), 10, () -> {
-                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
-                ejecutarPermitir(s, e);
-            });
-            return;}
+            return;
+        }
+        if (cmd.toLowerCase().startsWith("/bloquear")) {
+            if (e.declaracionBloqueo != null) {
+                c.enviarMensaje("Ya hay un bloqueo activo. Usa /dudar o espera.");
+                return;
+            }
 
-        if (cmd.startsWith("/bloquear")) ejecutarBloqueo(s, e, c.getNombreUsuario());
-        else if (cmd.startsWith("/permitir")) ejecutarPermitir(s, e);
+            if (e.accionPendiente.equals(Constantes.ACCION_ROBAR)) {
+                String[] partes = cmd.split(" ");
+                if (partes.length < 2) {
+                    c.enviarMensaje("Para bloquear un ROBO debes especificar tu personaje.");
+                    c.enviarMensaje("Usa: /bloquear capitan  O  /bloquear embajador");
+                    return;
+                }
+
+                String personaje = partes[1].toLowerCase();
+                if (!personaje.equals("capitan") && !personaje.equals("embajador")) {
+                    c.enviarMensaje("Personaje inválido. Solo Capitán o Embajador bloquean el robo.");
+                    return;
+                }
+            }
+            ejecutarBloqueo(s, e, c.getNombreUsuario(), cmd);
+        }
+        else if (cmd.startsWith("/permitir")) {
+            if (e.declaracionBloqueo != null) {
+                c.enviarMensaje("Hay un bloqueo activo. No puedes permitir ahora.");
+                return;
+            }
+            ejecutarPermitir(s, e);
+        }
         else {
-            c.enviarMensaje("Opciones: /permitir, /bloquear o /dudar");
-            iniciarTemporizador(s.getIdSala(), 10, () -> {
-                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
-                ejecutarPermitir(s, e);
-            });
+            c.enviarMensaje("Opciones válidas: /permitir, /bloquear [carta], /dudar");
         }
     }
 
     private void ejecutarDuda(SalaCoup s, EstadoPartida e, String retador) {
-        String resultado = s.resolverDesafio(e.atacantePendiente, retador, e.accionPendiente);
-
+        String acusado;
+        String accionADesafiar;
+        if (e.declaracionBloqueo != null) {
+            acusado = e.bloqueador;
+            accionADesafiar = e.declaracionBloqueo;
+        }
+        else {
+            acusado = e.atacantePendiente;
+            accionADesafiar = e.accionPendiente;
+        }
+        String resultado = s.resolverDesafio(acusado, retador, accionADesafiar);
         if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_EXITOSO)) {
-            String acusado = resultado.split(":")[1];
-            mensajeGlobalEnSala(s.getIdSala(), "¡" + retador + " GANÓ! " + acusado + " mintió y pierde carta.");
+            String mentiroso = resultado.split(":")[1];
+            mensajeGlobalEnSala(s.getIdSala(), "¡" + retador + " GANÓ EL DESAFÍO! " + mentiroso + " no tenía la carta.");
+            if (e.declaracionBloqueo != null) {
+                mensajeGlobalEnSala(s.getIdSala(), "El bloqueo cae. La acción original (" + e.accionPendiente + ") procede.");
+                e.declaracionBloqueo = null;
+                e.bloqueador = null;
+                ejecutarPermitir(s, e);
+
+                iniciarDescarte(Constantes.PREFIJO_ESPERA + mentiroso, s, e);
+                return;
+            }
+
             if (e.accionPendiente.equals("BLOQUEO_ASESINATO") || e.accionPendiente.equals(Constantes.ACCION_ASESINAR)) {
                 e.segundaMuertePendiente = true;
             }
-            iniciarDescarte(Constantes.PREFIJO_ESPERA + acusado, s, e);
-        } else if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_FALLIDO)) {
-            String perdedor = resultado.split(":")[1];
-            mensajeGlobalEnSala(s.getIdSala(), "¡FALLASTE! " + e.atacantePendiente + " tenía la carta. " + perdedor + " pierde vida.");
 
-            String resAccion = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
-            if (resAccion.equals("SELECCION_EMBAJADOR")) {
-                iniciarFaseSeleccionEmbajador(s, e, e.atacantePendiente);
-                return;
+            iniciarDescarte(Constantes.PREFIJO_ESPERA + mentiroso, s, e);
+        }
+
+        else if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_FALLIDO)) {
+            String perdedor = resultado.split(":")[1];
+            mensajeGlobalEnSala(s.getIdSala(), "¡DESAFÍO FALLIDO! " + acusado + " mostró la carta correcta.");
+
+            if (e.declaracionBloqueo != null) {
+                mensajeGlobalEnSala(s.getIdSala(), "El bloqueo se mantiene firme. La acción " + e.accionPendiente + " se cancela.");
             }
-            if (e.accionPendiente.equals(Constantes.ACCION_ASESINAR)) {
-                e.segundaMuertePendiente = true;
-            } else {
-                mensajeGlobalEnSala(s.getIdSala(), "Efecto de la acción: " + resAccion);
+            else {
+                mensajeGlobalEnSala(s.getIdSala(), "La acción procede.");
+                String resAccion = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
+                if (resAccion.equals("SELECCION_EMBAJADOR")) {
+                    iniciarFaseSeleccionEmbajador(s, e, e.atacantePendiente);
+                }
+                else {
+                    mensajeGlobalEnSala(s.getIdSala(), "Resultado: " + resAccion);
+                }
+                if (e.accionPendiente.equals(Constantes.ACCION_ASESINAR)) {
+                    e.segundaMuertePendiente = true;
+                }
             }
             iniciarDescarte(Constantes.PREFIJO_ESPERA + perdedor, s, e);
-        } else {
-            mensajeGlobalEnSala(s.getIdSala(), resultado);
-            iniciarTemporizador(s.getIdSala(), 10, () -> {
-                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Acción permitida tácitamente.");
-                ejecutarPermitir(s, e);
-            });
         }
     }
 
@@ -287,11 +325,46 @@ public class GestorPartida {
         return true;
     }
 
-    private void ejecutarBloqueo(SalaCoup s, EstadoPartida e, String quien) {
-        mensajeGlobalEnSala(s.getIdSala(), "¡BLOQUEO por " + quien + "!");
-        limpiarEstado(e);
-        s.siguienteTurno();
-        anunciarTurno(s);
+    private void ejecutarBloqueo(SalaCoup s, EstadoPartida e, String quien, String cmd) {
+        String tipoBloqueo = null;
+
+        switch (e.accionPendiente) {
+            case Constantes.ACCION_AYUDA:
+                tipoBloqueo = "BLOQUEO_AYUDA";
+                break;
+            case Constantes.ACCION_ASESINAR:
+                if (!quien.equals(e.victimaPendiente)) {
+                    enviarAC(quien, "Solo la víctima puede bloquear el asesinato.");
+                    return;
+                }
+                tipoBloqueo = "BLOQUEO_ASESINATO";
+                break;
+            case Constantes.ACCION_ROBAR:
+                if (!quien.equals(e.victimaPendiente)) {
+                    enviarAC(quien, "Solo la víctima puede bloquear el robo.");
+                    return;
+                }
+                if (cmd.toLowerCase().contains("capitan")) tipoBloqueo = "BLOQUEO_ROBO_CAPITAN";
+                else tipoBloqueo = "BLOQUEO_ROBO_EMBAJADOR";
+                break;
+            default:
+                return;
+        }
+        e.bloqueador = quien;
+        e.declaracionBloqueo = tipoBloqueo;
+
+        mensajeGlobalEnSala(s.getIdSala(), quien + " BLOQUEÓ usando " + tipoBloqueo + "!");
+        mensajeGlobalEnSala(s.getIdSala(), "Tienen 10s para desafiar (/dudar).");
+        iniciarTemporizador(s.getIdSala(), 10, () -> {
+            synchronized (GestorPartida.this) {
+                if (e.declaracionBloqueo != null) {
+                    mensajeGlobalEnSala(s.getIdSala(), "Nadie dudó. El bloqueo es exitoso y la acción se cancela.");
+                    limpiarEstado(e);
+                    s.siguienteTurno();
+                    anunciarTurno(s);
+                }
+            }
+        });
     }
 
     private void ejecutarPermitir(SalaCoup s, EstadoPartida e) {
@@ -392,7 +465,8 @@ public class GestorPartida {
     }
 
     private void limpiarEstado(EstadoPartida e) {
-        e.accionPendiente = null; e.atacantePendiente = null; e.victimaPendiente = null; e.segundaMuertePendiente = false;
+        e.accionPendiente = null; e.atacantePendiente = null; e.victimaPendiente = null; e.segundaMuertePendiente = false;e.bloqueador = null;
+        e.declaracionBloqueo = null;
     }
 
     private SalaCoup obtenerSala(UnCliente c) {

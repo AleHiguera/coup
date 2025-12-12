@@ -27,6 +27,9 @@ public class TestManual {
             testDesafioAccion();
             System.out.println("✅ Test Regla de Desafío (Mentira y Verdad): PASÓ");
 
+            testEmbajadorSeleccionManual();
+            System.out.println("✅ TEST EMBAJADOR MANUAL SUPERADO");
+
         } catch (Exception e) {
             System.err.println("\n🛑 ERROR CRÍTICO EN PRUEBAS: " + e.getMessage());
             e.printStackTrace();
@@ -118,6 +121,7 @@ public class TestManual {
         if (!res.startsWith("ESPERA_CARTA")) throw new RuntimeException("Golpe falló");
         if (rico.getMonedas() != 4) throw new RuntimeException("Cobro incorrecto");
     }
+
     private static void testDesafioAccion() {
         SalaCoup sala = new SalaCoup("T6", "Sala Desafios");
         sala.agregarJugador("Mentiroso");
@@ -153,5 +157,56 @@ public class TestManual {
         if (honesto.getManoActual().size() != 2) {
             throw new RuntimeException("Fallo: El honesto perdió carta injustamente.");
         }
+    }
+
+    private static void testEmbajadorSeleccionManual() {
+        System.out.println("\n--- Test: Embajador Selección Manual ---");
+        SalaCoup sala = new SalaCoup("TestEmb", "Sala Embajador");
+        sala.agregarJugador("Emba");
+        sala.agregarJugador("Rival");
+        sala.iniciarPartida();
+
+        Jugador emba = sala.getJugadores().get(0);
+
+        List<TipoCarta> manoInicial = new ArrayList<>();
+        manoInicial.add(TipoCarta.EMBAJADOR);
+        manoInicial.add(TipoCarta.CONDESA);
+        emba.actualizarMano(manoInicial);
+
+        System.out.println("1. Iniciando acción Embajador...");
+        String resInicio = sala.realizarAccionEmbajador(emba);
+        if (!resInicio.startsWith("INTENTO:EMBAJADOR")) throw new RuntimeException("Fallo al iniciar acción.");
+        System.out.println("2. Ejecutando acción pendiente...");
+        String resEjecucion = sala.ejecutarAccionPendiente("EMBAJADOR", emba, "TODOS");
+
+        if (!resEjecucion.equals("SELECCION_EMBAJADOR")) {
+            throw new RuntimeException("Fallo: Esperaba 'SELECCION_EMBAJADOR' pero recibí: " + resEjecucion);
+        }
+        System.out.println("   -> Correcto: La sala pide intervención manual.");
+        System.out.println("3. Obteniendo cartas del mazo (Opciones)...");
+        List<TipoCarta> opciones = sala.obtenerOpcionesEmbajador(emba);
+        System.out.println("   Cartas disponibles para elegir: " + opciones);
+        if (opciones.size() != 4) {
+            throw new RuntimeException("Fallo: Debería haber 4 cartas (2 mano + 2 mazo). Hay: " + opciones.size());
+        }
+        List<TipoCarta> seleccionadas = new ArrayList<>();
+        seleccionadas.add(opciones.get(0));
+        seleccionadas.add(opciones.get(3));
+
+        System.out.println("4. Jugador elige: " + seleccionadas);
+        String resFinal = sala.concretarSeleccionEmbajador(emba, seleccionadas, opciones);
+        if (!resFinal.startsWith("EXITO")) throw new RuntimeException("Fallo al concretar selección: " + resFinal);
+
+        if (emba.getManoActual().size() != 2) {
+            throw new RuntimeException("Fallo: El jugador terminó con " + emba.getManoActual().size() + " cartas. Debería tener 2.");
+        }
+
+        if (!emba.getManoActual().containsAll(seleccionadas)) {
+            throw new RuntimeException("Fallo: La mano final no coincide con lo que eligió el jugador.");
+        }
+        if (sala.getJugadorActivo().equals(emba)) {
+            throw new RuntimeException("Fallo: El turno no avanzó después del Embajador.");
+        }
+
     }
 }

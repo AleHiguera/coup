@@ -333,6 +333,14 @@ public class GestorPartida {
         mensajeGlobalEnSala(s.getIdSala(), res);
         e.jugadorPendienteDeDescarte = null;
         enviarEstadoJugador(c, obtenerJugador(s, c.getNombreUsuario()));
+
+        // 2. Verificar si queda un ganador después de que alguien pierde influencia
+        String resultadoFin = s.verificarGanador();
+        if (resultadoFin != null) {
+            finalizarPartida(s, resultadoFin);
+            return;
+        }
+
         anunciarTurno(s);
     }
 
@@ -504,11 +512,33 @@ public class GestorPartida {
         if (s != null) {
             s.removerJugador(u);
             mensajeGlobalEnSala(id, u + " salió.");
+            String resultadoFin = s.verificarGanador();
+            if (resultadoFin != null) {
+                finalizarPartida(s, resultadoFin);
+                return;
+            }
+
             if (s.getJugadores().isEmpty()) {
                 salasActivas.remove(id);
                 estadosPorSala.remove(id);
                 cancelarTemporizador(id);
             }
         }
+    }
+    private void finalizarPartida(SalaCoup s, String mensajeGanador) {
+        mensajeGlobalEnSala(s.getIdSala(), "----------------------------------");
+        mensajeGlobalEnSala(s.getIdSala(), "¡FIN DEL JUEGO! EL GANADOR ES: " + mensajeGanador.split(": ")[1]);
+        mensajeGlobalEnSala(s.getIdSala(), "----------------------------------");
+
+        cancelarTemporizador(s.getIdSala());
+        for (Jugador j : s.getJugadores()) {
+            jugadorEnSala.remove(j.getNombreUsuario());
+            UnCliente c = puentesDeConexion.get(j.getNombreUsuario());
+            if (c != null) {
+                c.enviarMensaje("El juego ha terminado. Opciones: /crear, /unirse, /salas");
+            }
+        }
+        salasActivas.remove(s.getIdSala());
+        estadosPorSala.remove(s.getIdSala());
     }
 }

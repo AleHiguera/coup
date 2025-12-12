@@ -293,4 +293,22 @@ public class SalaCoup {
             return "DESAFIO_EXITOSO:" + nombreAcusado;
         }
     }
+
+    public synchronized String verificarGanador() {
+        if (!juegoIniciado) return null;
+
+        List<Jugador> jugadoresVivos = new ArrayList<>();
+        for (Jugador j : jugadores) {
+            if (j.estaVivo()) {
+                jugadoresVivos.add(j);
+            }
+        }
+        if (jugadores.isEmpty()) return null;
+        if (jugadoresVivos.size() == 1) {
+            Jugador ganador = jugadoresVivos.get(0);
+            juegoIniciado = false; // Detener el juego
+            return "FIN_PARTIDA: " + ganador.getNombreUsuario();
+        }
+        return null;
+    }
 }

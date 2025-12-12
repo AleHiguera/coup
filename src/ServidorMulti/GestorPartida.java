@@ -221,6 +221,10 @@ public class GestorPartida {
                 c.enviarMensaje("No puedes dudar de tu propio bloqueo.");
                 return;
             }
+            if (c.getNombreUsuario().equals(e.atacantePendiente) && e.declaracionBloqueo == null) {
+                c.enviarMensaje("No puedes dudar de tu propia acción.");
+                return;
+            }
             ejecutarDuda(s, e, c.getNombreUsuario());
             return;
         }
@@ -232,11 +236,10 @@ public class GestorPartida {
                 c.enviarMensaje("Ya hay un bloqueo activo. Usa /dudar o espera.");
                 return;
             }
-
             if (e.accionPendiente.equals(Constantes.ACCION_ROBAR)) {
                 String[] partes = cmd.split(" ");
                 if (partes.length < 2) {
-                    c.enviarMensaje("Para bloquear un ROBO debes especificar tu personaje.");
+                    c.enviarMensaje("AMBIGÜEDAD: Debes especificar personaje.");
                     c.enviarMensaje("Usa: /bloquear capitan  O  /bloquear embajador");
                     return;
                 }
@@ -249,9 +252,15 @@ public class GestorPartida {
             }
             ejecutarBloqueo(s, e, c.getNombreUsuario(), cmd);
         }
+
         else if (cmd.startsWith("/permitir")) {
             if (e.declaracionBloqueo != null) {
                 c.enviarMensaje("Hay un bloqueo activo. No puedes permitir ahora.");
+                return;
+            }
+            if (e.accionPendiente.equals(Constantes.ACCION_AYUDA)) {
+                c.enviarMensaje("En Ayuda Exterior NO se usa /permitir.");
+                c.enviarMensaje("Cualquier jugador puede bloquear. Hay que esperar a que acabe el tiempo.");
                 return;
             }
             ejecutarPermitir(s, e);

@@ -133,6 +133,10 @@ public class GestorPartida {
     }
 
     private void delegarFaseJuego(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        if (cmd.equalsIgnoreCase("/log")) {
+            c.enviarMensaje(s.obtenerLogCompleto());
+            return;
+        }
         if (e.jugadorPendienteDeDescarte != null) procesarFaseDescarte(c, cmd, s, e);
         else if ("ESPERANDO_SELECCION_EMBAJADOR".equals(e.accionPendiente)) procesarSeleccionEmbajador(c, cmd, s, e);
         else if (e.accionPendiente != null) procesarFaseBloqueo(c, cmd, s, e);
@@ -491,6 +495,7 @@ public class GestorPartida {
     private void mensajeGlobalEnSala(String id, String m) {
         SalaCoup s = salasActivas.get(id);
         if (s != null) {
+            s.registrarEvento(m);
             for (Jugador j : s.getJugadores()) enviarAC(j.getNombreUsuario(), m);
             for (Map.Entry<String, String> entry : espectadorEnSala.entrySet()) {
                 if (entry.getValue().equals(id)) {
@@ -787,4 +792,5 @@ public class GestorPartida {
             anunciarTurno(s);
         }
     }
+
 }

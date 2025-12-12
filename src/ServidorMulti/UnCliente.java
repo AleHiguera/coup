@@ -120,7 +120,7 @@ public class UnCliente implements Runnable {
     private boolean esComandoJuego(String cmd) {
 
         return cmd.equals("/jugar") || cmd.equals("/dudar") || cmd.equals("/permitir") ||
-                cmd.equals("/bloquear") || cmd.equals("/seleccionar");
+                cmd.equals("/bloquear") || cmd.equals("/seleccionar") || cmd.equals("/log");
     }
 
     private void procesarJuego(String cmd, String[] partes, String fullCmd) {

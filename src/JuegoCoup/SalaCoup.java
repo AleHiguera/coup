@@ -15,6 +15,7 @@ public class SalaCoup {
 
     private int indiceTurnoActual = 0;
     private boolean juegoIniciado = false;
+    private final List<String> historialAcciones = new ArrayList<>();
 
     public SalaCoup(String id, String nombre) {
         this.idSala = id;
@@ -347,6 +348,23 @@ public class SalaCoup {
 
         siguienteTurno();
         return Constantes.PREFIJO_EXITO + " Embajador: Cartas actualizadas.";
+    }
+
+    public synchronized void registrarEvento(String mensaje) {
+        historialAcciones.add(mensaje);
+    }
+
+    public synchronized String obtenerLogCompleto() {
+        if (historialAcciones.isEmpty()) return "--- El historial está vacío ---";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== HISTORIAL DE PARTIDA ===\n");
+        int contador = 1;
+        for (String evento : historialAcciones) {
+            sb.append(contador++).append(". ").append(evento).append("\n");
+        }
+        sb.append("============================");
+        return sb.toString();
     }
 
 }

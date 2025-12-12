@@ -108,11 +108,15 @@ public class SalaCoup {
 
     private boolean validarTurno(Jugador j) {
         Jugador activo = getJugadorActivo();
-        return activo != null && activo.getNombreUsuario().equals(j.getNombreUsuario());
+        if (activo == null || !activo.getNombreUsuario().equals(j.getNombreUsuario())) {
+            return false;
+        }
+        return true;
     }
 
     public synchronized String realizarAccionIngreso(Jugador j) {
         if (!validarTurno(j)) return "ERROR: No es tu turno.";
+        if (j.debeDarGolpeEstado()) return "ERROR: Tienes 10+ monedas. Debes dar Golpe.";
         j.ganarMonedas(1);
         siguienteTurno();
         return "ACCION: " + j.getNombreUsuario() + " tomó Ingreso.";
@@ -120,11 +124,13 @@ public class SalaCoup {
 
     public synchronized String iniciarAccionAyudaExterior(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
+        if (j.debeDarGolpeEstado()) return "ERROR: Tienes 10+ monedas. Debes dar Golpe.";
         return Constantes.PREFIJO_INTENTO + Constantes.ACCION_AYUDA + ":" + Constantes.OBJ_TODOS;
     }
 
     public synchronized String realizarAccionImpuestos(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
+        if (j.debeDarGolpeEstado()) return "ERROR: Tienes 10+ monedas. Debes dar Golpe.";
         return Constantes.PREFIJO_INTENTO + Constantes.ACCION_IMPUESTOS + ":" + Constantes.OBJ_TODOS;
     }
 
@@ -151,12 +157,14 @@ public class SalaCoup {
 
     public synchronized String iniciarAccionAsesinato(Jugador asesino, String nomVic) {
         if (!validarTurno(asesino)) return "ERROR: Turno incorrecto.";
+        if (asesino.debeDarGolpeEstado()) return "ERROR: Tienes 10+ monedas. Debes dar Golpe.";
         if (!asesino.pagar(3)) return "ERROR: Faltan monedas.";
         return validarObjetivoYRetornar(nomVic, Constantes.PREFIJO_INTENTO + Constantes.ACCION_ASESINAR + ":");
     }
 
     public synchronized String iniciarAccionRobar(Jugador ladron, String nomVic) {
         if (!validarTurno(ladron)) return "ERROR: Turno incorrecto.";
+        if (ladron.debeDarGolpeEstado()) return "ERROR: Tienes 10+ monedas. Debes dar Golpe.";
         if (ladron.getNombreUsuario().equalsIgnoreCase(nomVic)) return "ERROR: Auto-robo.";
         return validarObjetivoYRetornar(nomVic, Constantes.PREFIJO_INTENTO + Constantes.ACCION_ROBAR + ":");
     }
@@ -201,6 +209,7 @@ public class SalaCoup {
 
     public synchronized String realizarAccionEmbajador(Jugador j) {
         if (!validarTurno(j)) return "ERROR: Turno incorrecto.";
+        if (j.debeDarGolpeEstado()) return "ERROR: Tienes 10+ monedas. Debes dar Golpe.";
         return Constantes.PREFIJO_INTENTO + Constantes.ACCION_EMBAJADOR + ":" + Constantes.OBJ_TODOS;
     }
 
@@ -312,4 +321,6 @@ public class SalaCoup {
         }
         return null;
     }
+
+
 }

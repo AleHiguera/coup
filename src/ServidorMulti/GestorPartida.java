@@ -3,18 +3,15 @@ package ServidorMulti;
 import JuegoCoup.Jugador;
 import JuegoCoup.SalaCoup;
 import JuegoCoup.TipoCarta;
-import java.util.Map;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.UUID;
+
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class GestorPartida {
     private static class EstadoPartida {
         String jugadorPendienteDeDescarte, atacantePendiente, victimaPendiente, accionPendiente;
         boolean segundaMuertePendiente = false;
+        List<TipoCarta> cartasEmbajadorPendientes;
     }
 
     private final Map<String, SalaCoup> salasActivas = new ConcurrentHashMap<>();
@@ -135,8 +132,10 @@ public class GestorPartida {
 
     private void delegarFaseJuego(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
         if (e.jugadorPendienteDeDescarte != null) procesarFaseDescarte(c, cmd, s, e);
+        else if ("ESPERANDO_SELECCION_EMBAJADOR".equals(e.accionPendiente)) procesarSeleccionEmbajador(c, cmd, s, e);
         else if (e.accionPendiente != null) procesarFaseBloqueo(c, cmd, s, e);
-        else procesarFaseNormal(c, cmd, s, e);}
+        else procesarFaseNormal(c, cmd, s, e);
+    }
 
     private void procesarFaseNormal(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
         Jugador j = obtenerJugador(s, c.getNombreUsuario());
@@ -261,6 +260,10 @@ public class GestorPartida {
             mensajeGlobalEnSala(s.getIdSala(), "¡FALLASTE! " + e.atacantePendiente + " tenía la carta. " + perdedor + " pierde vida.");
 
             String resAccion = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
+            if (resAccion.equals("SELECCION_EMBAJADOR")) {
+                iniciarFaseSeleccionEmbajador(s, e, e.atacantePendiente);
+                return;
+            }
             if (e.accionPendiente.equals(Constantes.ACCION_ASESINAR)) {
                 e.segundaMuertePendiente = true;
             } else {
@@ -294,6 +297,10 @@ public class GestorPartida {
     private void ejecutarPermitir(SalaCoup s, EstadoPartida e) {
         mensajeGlobalEnSala(s.getIdSala(), e.victimaPendiente + " permitio la accion.");
         String res = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
+        if (res.equals("SELECCION_EMBAJADOR")) {
+            iniciarFaseSeleccionEmbajador(s, e, e.atacantePendiente);
+            return;
+        }
         String atacantePrevio = e.atacantePendiente;
         limpiarEstado(e);
         if (res.startsWith("ESPERA_CARTA:")) iniciarDescarte(res, s, e);
@@ -631,5 +638,70 @@ public class GestorPartida {
                 algunaActiva = true;}
         }
         if (!algunaActiva) {c.enviarMensaje("No hay salas de juego activas para espectar.");}
+    }
+
+    private void iniciarFaseSeleccionEmbajador(SalaCoup s, EstadoPartida e, String nombreJugador) {
+        Jugador j = obtenerJugador(s, nombreJugador);
+        if (j == null) return;
+        List<TipoCarta> opciones = s.obtenerOpcionesEmbajador(j);
+        e.cartasEmbajadorPendientes = opciones;
+        e.accionPendiente = "ESPERANDO_SELECCION_EMBAJADOR";
+        UnCliente c = puentesDeConexion.get(nombreJugador);
+        if (c != null) {
+            c.enviarMensaje("--- FASE EMBAJADOR ---");
+            c.enviarMensaje("Tus opciones son: " + opciones.toString());
+            c.enviarMensaje("Escribe: /seleccionar CARTA1 [CARTA2]");
+            c.enviarMensaje("(Debes quedarte con " + j.getManoActual().size() + " cartas)");
+        }
+        mensajeGlobalEnSala(s.getIdSala(), nombreJugador + " está seleccionando cartas...");
+        iniciarTemporizador(s.getIdSala(), 60, () -> {
+            if ("ESPERANDO_SELECCION_EMBAJADOR".equals(e.accionPendiente)) {
+                List<TipoCarta> auto = new ArrayList<>();
+                for(int i=0; i < j.getManoActual().size(); i++) auto.add(opciones.get(i));
+                s.concretarSeleccionEmbajador(j, auto, opciones);
+                mensajeGlobalEnSala(s.getIdSala(), "Tiempo agotado. Selección automática.");
+                limpiarEstado(e);
+                anunciarTurno(s);
+            }
+        });
+    }
+
+    private void procesarSeleccionEmbajador(UnCliente c, String cmd, SalaCoup s, EstadoPartida e) {
+        if (!c.getNombreUsuario().equals(e.atacantePendiente)) return;
+
+        if (!cmd.toLowerCase().startsWith("/seleccionar ")) {
+            c.enviarMensaje("Formato incorrecto. Usa: /seleccionar <Carta1> [Carta2]");
+            return;
+        }
+
+        String[] partes = cmd.toUpperCase().split(" ");
+        List<TipoCarta> seleccionadas = new ArrayList<>();
+        List<TipoCarta> copiaVerificacion = new ArrayList<>(e.cartasEmbajadorPendientes);
+
+        try {
+            for (int i = 1; i < partes.length; i++) {
+                TipoCarta carta = TipoCarta.valueOf(partes[i]);
+                if (copiaVerificacion.contains(carta)) {
+                    seleccionadas.add(carta);
+                    copiaVerificacion.remove(carta);
+                } else {
+                    c.enviarMensaje("ERROR: No tienes la carta " + partes[i] + " en tus opciones.");
+                    return;
+                }
+            }
+        } catch (IllegalArgumentException ex) {
+            c.enviarMensaje("ERROR: Nombre de carta no válido.");
+            return;
+        }
+        Jugador j = obtenerJugador(s, c.getNombreUsuario());
+        String res = s.concretarSeleccionEmbajador(j, seleccionadas, e.cartasEmbajadorPendientes);
+        if (res.startsWith(Constantes.PREFIJO_ERROR)) {
+            c.enviarMensaje(res);
+        } else {
+            mensajeGlobalEnSala(s.getIdSala(), res);
+            e.cartasEmbajadorPendientes = null;
+            limpiarEstado(e);
+            anunciarTurno(s);
+        }
     }
 }

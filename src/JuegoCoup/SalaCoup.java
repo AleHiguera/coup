@@ -180,7 +180,7 @@ public class SalaCoup {
         if (tipo.equals(Constantes.ACCION_AYUDA)) return ejecutarAyuda(atq);
         if (tipo.equals(Constantes.ACCION_ROBAR)) return ejecutarRobo(atq, nomVic);
         if (tipo.equals(Constantes.ACCION_ASESINAR)) return Constantes.PREFIJO_ESPERA + nomVic;
-        if (tipo.equals(Constantes.ACCION_EMBAJADOR)) return ejecutarEmbajador(atq);
+        if (tipo.equals(Constantes.ACCION_EMBAJADOR)) return "SELECCION_EMBAJADOR";
         return Constantes.PREFIJO_ERROR + " Acción desconocida.";
     }
 
@@ -213,22 +213,22 @@ public class SalaCoup {
         return Constantes.PREFIJO_INTENTO + Constantes.ACCION_EMBAJADOR + ":" + Constantes.OBJ_TODOS;
     }
 
-    private String ejecutarEmbajador(Jugador j) {
+    /*private String ejecutarEmbajador(Jugador j) {
         intercambiarCartas(j);
         siguienteTurno();
         return Constantes.PREFIJO_EXITO + " Cartas cambiadas.";
-    }
+    }*/
 
-    private void intercambiarCartas(Jugador j) {
+    /*private void intercambiarCartas(Jugador j) {
         List<TipoCarta> temp = new ArrayList<>(j.getManoActual());
         mazo.robarCarta().ifPresent(temp::add);
         mazo.robarCarta().ifPresent(temp::add);
 
         Collections.shuffle(temp);
         restaurarMano(j, temp);
-    }
+    }*/
 
-    private void restaurarMano(Jugador j, List<TipoCarta> temp) {
+    /*private void restaurarMano(Jugador j, List<TipoCarta> temp) {
         List<TipoCarta> nueva = new ArrayList<>();
         int count = j.getManoActual().size();
         int limite = Math.min(count, temp.size());
@@ -241,7 +241,7 @@ public class SalaCoup {
         }
 
         j.actualizarMano(nueva);
-    }
+    }*/
 
     public synchronized String concretarDescarte(String nom, String cartaStr) {
         Jugador j = buscarJugadorInterno(nom);
@@ -316,11 +316,38 @@ public class SalaCoup {
         if (jugadores.isEmpty()) return null;
         if (jugadoresVivos.size() == 1) {
             Jugador ganador = jugadoresVivos.get(0);
-            juegoIniciado = false; // Detener el juego
+            juegoIniciado = false;
             return "FIN_PARTIDA: " + ganador.getNombreUsuario();
         }
         return null;
     }
 
+    public synchronized List<TipoCarta> obtenerOpcionesEmbajador(Jugador j) {
+        List<TipoCarta> opciones = new ArrayList<>(j.getManoActual());
+        mazo.robarCarta().ifPresent(opciones::add);
+        mazo.robarCarta().ifPresent(opciones::add);
+
+        return opciones;
+    }
+    public synchronized String concretarSeleccionEmbajador(Jugador j, List<TipoCarta> seleccionadas, List<TipoCarta> opcionesOriginales) {
+        int cartasQueDebeTener = j.getManoActual().size();
+        if (seleccionadas.size() != cartasQueDebeTener) {
+            return Constantes.PREFIJO_ERROR + " Debes elegir exactamente " + cartasQueDebeTener + " cartas.";
+        }
+        List<TipoCarta> sobrantes = new ArrayList<>(opcionesOriginales);
+
+        for (TipoCarta c : seleccionadas) {
+            sobrantes.remove(c);
+        }
+        for (TipoCarta c : sobrantes) {
+            mazo.devolverCarta(c);
+        }
+        mazo.barajar();
+
+        j.actualizarMano(seleccionadas);
+
+        siguienteTurno();
+        return Constantes.PREFIJO_EXITO + " Embajador: Cartas actualizadas.";
+    }
 
 }

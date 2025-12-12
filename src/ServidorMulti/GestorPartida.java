@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GestorPartida {
     private static class EstadoPartida {
         String jugadorPendienteDeDescarte, atacantePendiente, victimaPendiente, accionPendiente;
+        boolean segundaMuertePendiente = false;
     }
 
     private final Map<String, SalaCoup> salasActivas = new ConcurrentHashMap<>();
@@ -83,6 +84,7 @@ public class GestorPartida {
     private void notificarCreacion(UnCliente c, String nom, String id) {
         c.enviarMensaje("SALA CREADA: " + nom + " (ID: " + id + ")");
         c.enviarMensaje("Comandos: /iniciar, /invitar, /abandonar, /eliminar");}
+
     public boolean unirseASala(String idSala, UnCliente cliente) {
         SalaCoup sala = salasActivas.get(idSala);
         if (validarUnion(sala, cliente)) {
@@ -91,6 +93,7 @@ public class GestorPartida {
         }
         return false;
     }
+
     private boolean validarUnion(SalaCoup sala, UnCliente c) {
         if (sala == null) {
             c.enviarMensaje("Sala no existe.");
@@ -249,14 +252,20 @@ public class GestorPartida {
         if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_EXITOSO)) {
             String acusado = resultado.split(":")[1];
             mensajeGlobalEnSala(s.getIdSala(), "¡" + retador + " GANÓ! " + acusado + " mintió y pierde carta.");
+            if (e.accionPendiente.equals("BLOQUEO_ASESINATO") || e.accionPendiente.equals(Constantes.ACCION_ASESINAR)) {
+                e.segundaMuertePendiente = true;
+            }
             iniciarDescarte(Constantes.PREFIJO_ESPERA + acusado, s, e);
         } else if (resultado.startsWith(Constantes.PREFIJO_DESAFIO_FALLIDO)) {
             String perdedor = resultado.split(":")[1];
             mensajeGlobalEnSala(s.getIdSala(), "¡FALLASTE! " + e.atacantePendiente + " tenía la carta. " + perdedor + " pierde vida.");
 
             String resAccion = s.ejecutarAccionPendiente(e.accionPendiente, obtenerJugador(s, e.atacantePendiente), e.victimaPendiente);
-            mensajeGlobalEnSala(s.getIdSala(), "Acción continúa: " + resAccion);
-
+            if (e.accionPendiente.equals(Constantes.ACCION_ASESINAR)) {
+                e.segundaMuertePendiente = true;
+            } else {
+                mensajeGlobalEnSala(s.getIdSala(), "Efecto de la acción: " + resAccion);
+            }
             iniciarDescarte(Constantes.PREFIJO_ESPERA + perdedor, s, e);
         } else {
             mensajeGlobalEnSala(s.getIdSala(), resultado);
@@ -312,15 +321,12 @@ public class GestorPartida {
         if (res.startsWith("ERROR")) {
             c.enviarMensaje(res);
         }
-        else finalizarDescarte(s, e, c, res);}
+        else finalizarDescarte(s, e, c, res);
+    }
 
     private void finalizarDescarte(SalaCoup s, EstadoPartida e, UnCliente c, String res) {
         mensajeGlobalEnSala(s.getIdSala(), res);
         e.jugadorPendienteDeDescarte = null;
-        Jugador jugadorEliminado = obtenerJugador(s, c.getNombreUsuario()); // Obtener el jugador antes de que sea eliminado
-
-        enviarEstadoJugador(c, jugadorEliminado);
-
         if (res.startsWith(Constantes.PREFIJO_ELIMINADO)) {
             c.enviarMensaje(MSG_ELIMINADO);
             jugadorEnSala.remove(c.getNombreUsuario());
@@ -330,22 +336,34 @@ public class GestorPartida {
             c.enviarMensaje("Opciones: /abandonar, /espectador_quedarme");
 
             iniciarTemporizador(s.getIdSala(), 30, () -> forzarAbandonoOEspectador(s, c.getNombreUsuario()));
-
+            limpiarEstado(e);
+            String resultadoFin = s.verificarGanador();
+            if (resultadoFin != null) {
+                finalizarPartida(s, resultadoFin);
+                return;
+            }
+            anunciarTurno(s);
             return;
         }
-
-        String resultadoFin = s.verificarGanador();
-        if (resultadoFin != null) {
-            finalizarPartida(s, resultadoFin);
-            return;}
-
+        if (e.segundaMuertePendiente) {
+            Jugador victima = obtenerJugador(s, c.getNombreUsuario());
+            if (victima != null && victima.estaVivo()) {
+                e.segundaMuertePendiente = false;
+                mensajeGlobalEnSala(s.getIdSala(), "☠️ ¡DOBLE PELIGRO! El asesinato sigue en pie (o mentiste sobre la Condesa).");
+                mensajeGlobalEnSala(s.getIdSala(), victima.getNombreUsuario() + " debe perder otra influencia inmediatamente.");
+                iniciarDescarte(Constantes.PREFIJO_ESPERA + victima.getNombreUsuario(), s, e);
+                return;
+            }
+        }
+        limpiarEstado(e);
         anunciarTurno(s);
     }
 
     private void iniciarDescarte(String res, SalaCoup s, EstadoPartida e) {
         String victima = res.split(":")[1];
         e.jugadorPendienteDeDescarte = victima;
-        notificarNecesidadDescarte(s.getIdSala(), victima);}
+        notificarNecesidadDescarte(s.getIdSala(), victima);
+    }
 
     private void notificarNecesidadDescarte(String id, String victima) {
         mensajeGlobalEnSala(id, victima + " debe perder una influencia.");
@@ -367,15 +385,19 @@ public class GestorPartida {
     }
 
     private void limpiarEstado(EstadoPartida e) {
-        e.accionPendiente = null; e.atacantePendiente = null; e.victimaPendiente = null;
+        e.accionPendiente = null; e.atacantePendiente = null; e.victimaPendiente = null; e.segundaMuertePendiente = false;
     }
+
     private SalaCoup obtenerSala(UnCliente c) {
         String nombre = c.getNombreUsuario();
         String idSala = jugadorEnSala.get(nombre);
-        return salasActivas.get(idSala);}
+        return salasActivas.get(idSala);
+    }
+
     private Jugador obtenerJugador(SalaCoup s, String n) {
         for(Jugador j : s.getJugadores()) if(j.getNombreUsuario().equals(n)) return j; return null;
     }
+
     private void mensajeGlobalEnSala(String id, String m) {
         SalaCoup s = salasActivas.get(id);
         if (s != null) {
@@ -386,17 +408,20 @@ public class GestorPartida {
             }
         }
     }
+
     private void enviarAC(String u, String m) { UnCliente c = puentesDeConexion.get(u); if(c!=null) c.enviarMensaje(m); }
+
     private void enviarEstadoJugador(UnCliente c, Jugador j) {
         c.enviarMensaje("Cartas: " + j.getManoActual() + " | Monedas: " + j.getMonedas());
     }
+
     private void anunciarTurno(SalaCoup s) {
         Jugador act = s.getJugadorActivo();
         if (act != null) for (Jugador j : s.getJugadores()) notificarTurnoIndividual(j, act, s.getNombreSala());
 
         mensajeGlobalEnSala(s.getIdSala(), "Turno de " + act.getNombreUsuario() + " (60s)");
-        iniciarTemporizador(s.getIdSala(), 60, () -> forzarFinTurno(s));}
-
+        iniciarTemporizador(s.getIdSala(), 60, () -> forzarFinTurno(s));
+    }
 
     private void forzarFinTurno(SalaCoup s) {
         mensajeGlobalEnSala(s.getIdSala(), "TIEMPO DE TURNO AGOTADO. Se pasa el turno.");

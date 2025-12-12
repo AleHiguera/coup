@@ -142,12 +142,19 @@ public class UnCliente implements Runnable {
         if (partes.length < 2) enviarMensaje("Uso: /eliminar <usuario>");
         else servidor.getGestorPartida().eliminarJugadorDeSala(this, partes[1]);
     }
-
     private void procesarInvitar(String[] partes, String fullCmd) {
-        if (partes.length < 2) enviarMensaje("Uso: /invitar <usuario>");
-        else servidor.getGestorPartida().invitarUsuarios(this, fullCmd.substring(fullCmd.indexOf(' ') + 1).split(" "));
+        if (partes.length < 2) {
+            String usuariosConectados = servidor.getUsuariosConectados();
+            if (usuariosConectados.isEmpty()) {
+                enviarMensaje("No hay otros usuarios conectados para invitar.");
+            } else {
+                enviarMensaje("Uso: /invitar <usuario1> [usuario2...]");
+                enviarMensaje("Usuarios conectados (puedes invitar): " + usuariosConectados);
+            }
+        } else {
+            servidor.getGestorPartida().invitarUsuarios(this, fullCmd.substring(fullCmd.indexOf(' ') + 1).split(" "));
+        }
     }
-
     private boolean verificarAuth() {
         if (!autenticado) enviarMensaje("Debes iniciar sesion primero.");
         return autenticado;

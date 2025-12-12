@@ -3,6 +3,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+// Importaciones requeridas para la validación de formato
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -12,6 +13,7 @@ public class GestorUsuarios {
     private final Set<String> comandosReservados = new HashSet<>(
             Arrays.asList("/login", "/register", "/exit", "login", "register", "exit")
     );
+
     private static final String PATRON_USUARIO_FORMATO = "^[a-zA-Z0-9]{3,20}$";
     private static final Pattern COMPILADOR_PATRON = Pattern.compile(PATRON_USUARIO_FORMATO);
 
@@ -19,7 +21,6 @@ public class GestorUsuarios {
     public GestorUsuarios(ManejadorBaseDatos bd) {
         this.bd = bd;
     }
-
     private String validarCamposRequeridos(String usuario, String contrasena) {
         if (usuario.isEmpty() || contrasena.isEmpty()) {
             return "ERROR: Ambos campos son requeridos.";
@@ -45,7 +46,6 @@ public class GestorUsuarios {
     public boolean esComandoReservado(String texto) {
         return comandosReservados.contains(texto.toLowerCase());
     }
-
     public String registrarUsuario(String usuario, String contrasena) throws SQLException {
         String resultadoValidacion = realizarValidaciones(usuario, contrasena);
 
@@ -78,7 +78,6 @@ public class GestorUsuarios {
             return "ERROR: No se pudo completar el registro.";
         }
     }
-
     public boolean autenticar(String usuario, String contrasena) throws SQLException {
         if (usuario.isEmpty() || contrasena.isEmpty()) {
             return false;

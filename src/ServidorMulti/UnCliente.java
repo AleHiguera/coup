@@ -5,7 +5,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.sql.SQLException;
-import java.util.Arrays;
 
 public class UnCliente implements Runnable {
     private final Socket socket;
@@ -13,219 +12,189 @@ public class UnCliente implements Runnable {
     private final DataInputStream entrada;
     private final String claveCliente;
     private final IServidor servidor;
-
     private boolean autenticado = false;
     private String nombreUsuario = null;
 
-    public UnCliente(Socket s, String claveCliente, IServidor servidor) throws IOException {
+    public UnCliente(Socket s, String clave, IServidor serv) throws IOException {
         this.socket = s;
-        this.claveCliente = claveCliente;
-        this.servidor = servidor;
+        this.claveCliente = clave;
+        this.servidor = serv;
         this.salida = new DataOutputStream(s.getOutputStream());
         this.entrada = new DataInputStream(s.getInputStream());
     }
+
     public boolean isAutenticado() { return autenticado; }
     public String getNombreUsuario() { return nombreUsuario; }
 
     @Override
     public void run() {
-
         while (!socket.isClosed()) {
             try {
-                String mensaje = entrada.readUTF();
-                procesarEntrada(mensaje);
-            } catch (IOException ex) {
+                cicloLectura();
+            } catch (Exception ex) {
                 cerrarConexion();
                 break;
-            } catch (SQLException e) {
-                enviarMensaje("Error interno BD: " + e.getMessage());
             }
         }
+    }
+
+    private void cicloLectura() throws IOException, SQLException {
+        String mensaje = entrada.readUTF();
+        procesarEntrada(mensaje);
     }
 
     private void procesarEntrada(String mensaje) throws IOException, SQLException {
         if (mensaje.startsWith("/")) {
             manejarComando(mensaje);
-        } else if (autenticado) {
-            if (mensaje.startsWith("@")) {
-                String[] partes = mensaje.split(" ", 2);
-                if (partes.length > 1) {
-                    servidor.enviarMensajePrivado(partes[0].substring(1), partes[1], this);
-                }
-            } else {
-                servidor.difundirMensaje(mensaje, this);
-            }
         } else {
-            enviarMensaje(Constantes.ERR_AUTH_REQUERIDA);
+            manejarMensajeChat(mensaje);
         }
     }
 
-    private void manejarComando(String comandoCompleto) throws IOException, SQLException {
-        String[] partes = comandoCompleto.split(" ", 4);
+    private void manejarMensajeChat(String mensaje) {
+        if (!autenticado) {
+            enviarMensaje(Constantes.ERR_AUTH_REQUERIDA);
+            return;
+        }
+        distribuirMensaje(mensaje);
+    }
+
+    private void distribuirMensaje(String mensaje) {
+        if (mensaje.startsWith("@")) {
+            enviarPrivado(mensaje);
+        } else {
+            servidor.difundirMensaje(mensaje, this);
+        }
+    }
+
+    private void enviarPrivado(String mensaje) {
+        String[] partes = mensaje.split(" ", 2);
+        if (partes.length > 1) {
+            servidor.enviarMensajePrivado(partes[0].substring(1), partes[1], this);
+        }
+    }
+
+    private void manejarComando(String cmd) throws IOException, SQLException {
+        String[] partes = cmd.split(" ", 4);
         String comando = partes[0].toLowerCase();
 
-        switch (comando) {
-            case Constantes.CMD_LOGIN:
-                procesarLogin(partes);
-                break;
-            case Constantes.CMD_REGISTER:
-                procesarRegistro(partes);
-                break;
-            case "/crear":
-                if (autenticado) {
-                    String nombreSala = (partes.length > 1) ? partes[1] : null;
-                    servidor.getGestorPartida().crearSala(this, nombreSala);
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+        if (esComandoAuth(comando)) procesarAuth(comando, partes);
+        else if (esComandoSala(comando)) procesarSala(comando, partes, cmd);
+        else if (esComandoJuego(comando)) procesarJuego(comando, partes, cmd);
+        else if (Constantes.CMD_EXIT.equals(comando)) cerrarConexion();
+        else enviarMensaje("Comando desconocido.");
+    }
 
-            case "/unirse":
-                if (autenticado) {
-                    if (partes.length < 2) {
-                        enviarMensaje("Uso: /unirse <ID_Sala> o usa /salas para ver las disponibles.");
-                    } else {
-                        servidor.getGestorPartida().unirseASala(partes[1], this);
-                    }
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+    private boolean esComandoAuth(String cmd) {
+        return cmd.equals(Constantes.CMD_LOGIN) || cmd.equals(Constantes.CMD_REGISTER);
+    }
 
-            case "/salas":
-                if (autenticado) {
-                    servidor.getGestorPartida().mostrarSalasDisponibles(this);
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+    private void procesarAuth(String cmd, String[] partes) throws SQLException {
+        if (cmd.equals(Constantes.CMD_LOGIN)) procesarLogin(partes);
+        else procesarRegistro(partes);
+    }
 
-            case "/abandonar":
-                if (autenticado) {
-                    String resultado = servidor.getGestorPartida().abandonarSala(this.nombreUsuario);
-                    enviarMensaje(resultado);
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+    private boolean esComandoSala(String cmd) {
+        return cmd.equals("/crear") || cmd.equals("/unirse") || cmd.equals("/salas") ||
+                cmd.equals("/abandonar") || cmd.equals("/eliminar") || cmd.equals("/invitar") ||
+                cmd.equals("/si") || cmd.equals("/no") || cmd.equals("/iniciar");
+    }
 
-            case "/eliminar":
-                if (autenticado) {
-                    if (partes.length < 2) {
-                        enviarMensaje("Uso: /eliminar <usuario>");
-                    } else {
-                        servidor.getGestorPartida().eliminarJugadorDeSala(this, partes[1]);
-                    }
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+    private void procesarSala(String cmd, String[] partes, String fullCmd) {
+        if (!verificarAuth()) return;
+        if (cmd.equals("/crear")) servidor.getGestorPartida().crearSala(this, (partes.length > 1) ? partes[1] : null);
+        else if (cmd.equals("/unirse")) procesarUnirse(partes);
+        else if (cmd.equals("/salas")) servidor.getGestorPartida().mostrarSalasDisponibles(this);
+        else if (cmd.equals("/abandonar")) enviarMensaje(servidor.getGestorPartida().abandonarSala(this.nombreUsuario));
+        else if (cmd.equals("/eliminar")) procesarEliminar(partes);
+        else procesarSalaExtras(cmd, partes, fullCmd);
+    }
 
-            case "/invitar":
-                if (autenticado) {
-                    if (partes.length < 2) {
-                        enviarMensaje("Uso: /invitar <usuario1> [usuario2]...");
-                        enviarMensaje("Usuarios conectados: " + servidor.getUsuariosConectados());
-                    } else {
-                        String cuerpoComando = comandoCompleto.substring(comandoCompleto.indexOf(' ') + 1);
-                        String[] invitados = cuerpoComando.split(" ");
-                        servidor.getGestorPartida().invitarUsuarios(this, invitados);
-                    }
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+    private void procesarSalaExtras(String cmd, String[] partes, String fullCmd) {
+        if (cmd.equals("/invitar")) procesarInvitar(partes, fullCmd);
+        else if (cmd.equals("/si") || cmd.equals("/no")) servidor.getGestorPartida().responderInvitacion(this, cmd);
+        else if (cmd.equals("/iniciar")) servidor.getGestorPartida().iniciarJuego(this);
+    }
 
-            case "/si":
-            case "/no":
-                if (autenticado) {
-                    servidor.getGestorPartida().responderInvitacion(this, comando);
-                } else {
-                    enviarMensaje("Debes iniciar sesion para aceptar o rechazar invitaciones.");
-                }
-                break;
+    private boolean esComandoJuego(String cmd) {
 
-            case "/iniciar":
-                if (autenticado) {
-                    servidor.getGestorPartida().iniciarJuego(this);
-                } else {
-                    enviarMensaje("Debes iniciar sesion para iniciar la partida.");
-                }
-                break;
-            case "/jugar":
-                if (autenticado) {
-                    if (partes.length < 2) {
-                        enviarMensaje("Uso: /jugar <accion> (Ej: /jugar ingreso)");
-                    } else {
-                        String accionJuego = comandoCompleto.substring(comandoCompleto.indexOf(' ') + 1);
-                        servidor.getGestorPartida().procesarJugada(this, accionJuego);
-                    }
-                } else {
-                    enviarMensaje("Debes iniciar sesion primero.");
-                }
-                break;
+        return cmd.equals("/jugar") || cmd.equals("/dudar") || cmd.equals("/permitir");
+    }
 
-            case Constantes.CMD_EXIT:
-                cerrarConexion();
-                break;
-            default:
-                enviarMensaje("Comando desconocido. Opciones de lobby: /crear, /unirse, /salas.");
+    private void procesarJuego(String cmd, String[] partes, String fullCmd) {
+        if (!verificarAuth()) return;
+
+        if (cmd.equals("/jugar")) {
+            if (partes.length < 2) enviarMensaje("Uso: /jugar <accion>");
+            else servidor.getGestorPartida().procesarJugada(this, fullCmd.substring(fullCmd.indexOf(' ') + 1));
         }
+        else {
+            servidor.getGestorPartida().procesarJugada(this, fullCmd);
+        }
+    }
+
+    private void procesarUnirse(String[] partes) {
+        if (partes.length < 2) enviarMensaje("Uso: /unirse <ID>");
+        else servidor.getGestorPartida().unirseASala(partes[1], this);
+    }
+
+    private void procesarEliminar(String[] partes) {
+        if (partes.length < 2) enviarMensaje("Uso: /eliminar <usuario>");
+        else servidor.getGestorPartida().eliminarJugadorDeSala(this, partes[1]);
+    }
+
+    private void procesarInvitar(String[] partes, String fullCmd) {
+        if (partes.length < 2) enviarMensaje("Uso: /invitar <usuario>");
+        else servidor.getGestorPartida().invitarUsuarios(this, fullCmd.substring(fullCmd.indexOf(' ') + 1).split(" "));
+    }
+
+    private boolean verificarAuth() {
+        if (!autenticado) enviarMensaje("Debes iniciar sesion primero.");
+        return autenticado;
     }
 
     private void procesarLogin(String[] partes) throws SQLException {
-        if (autenticado) {
-            enviarMensaje("Ya estas conectado como " + nombreUsuario);
-            return;
-        }
-        if (partes.length < 3) {
-            enviarMensaje("Uso: /login <usuario> <pass>");
-            return;
-        }
-        String usuario = partes[1];
-        String pass = partes[2];
+        if (autenticado) { enviarMensaje("Ya conectado."); return; }
+        if (partes.length < 3) { enviarMensaje("Uso: /login <user> <pass>"); return; }
+        ejecutarLogin(partes[1], partes[2]);
+    }
 
-        if (servidor.getGestorUsuarios().autenticar(usuario, pass)) {
-            if (servidor.registrarSesionActiva(usuario, claveCliente)) {
-                this.autenticado = true;
-                this.nombreUsuario = usuario;
+    private void ejecutarLogin(String user, String pass) throws SQLException {
+        if (servidor.getGestorUsuarios().autenticar(user, pass)) completarLogin(user);
+        else enviarMensaje("Credenciales incorrectas.");
+    }
 
-                enviarMensaje("Login exitoso. Hola " + usuario);
-                servidor.getGestorPartida().registrarCliente(this);
-
-            } else {
-                enviarMensaje(Constantes.ERR_LOGIN_DUPLICADO);
-            }
-        } else {
-            enviarMensaje("Credenciales incorrectas.");
-        }
+    private void completarLogin(String user) {
+        if (servidor.registrarSesionActiva(user, claveCliente)) {
+            autenticado = true;
+            nombreUsuario = user;
+            enviarMensaje("Login exitoso.");
+            servidor.getGestorPartida().registrarCliente(this);
+        } else enviarMensaje(Constantes.ERR_LOGIN_DUPLICADO);
     }
 
     private void procesarRegistro(String[] partes) throws SQLException {
-        if (partes.length < 3) {
-            enviarMensaje("Uso: /register <usuario> <pass>");
+        if (autenticado) {
+            enviarMensaje("ERROR: Ya tienes una sesión activa (" + nombreUsuario + ").");
+            enviarMensaje("Debes salir (/exit) antes de registrar una cuenta nueva.");
             return;
         }
+        if (partes.length < 3) { enviarMensaje("Uso: /register <user> <pass>"); return; }
         String res = servidor.getGestorUsuarios().registrarUsuario(partes[1], partes[2]);
-        enviarMensaje(res.equals("REGISTRO_OK") ? "Registro exitoso. Ahora haz /login." : res);
+        enviarMensaje(res.equals("REGISTRO_OK") ? "Registro exitoso." : res);
     }
 
     public void enviarMensaje(String msg) {
-        try {
-            salida.writeUTF(msg);
-        } catch (IOException e) { /* Ignorar si falla el envío */ }
+        try { salida.writeUTF(msg); } catch (IOException e) { }
     }
 
     private void cerrarConexion() {
-        try {
-            socket.close();
-        } catch (IOException e) {
-        } finally {
-            servidor.eliminarCliente(claveCliente);
+        try { socket.close(); } catch (IOException e) { }
+        finally { limpiarSesion(); }
+    }
 
-            if (nombreUsuario != null) {
-                servidor.getGestorPartida().eliminarJugador(nombreUsuario);
-            }
-        }
+    private void limpiarSesion() {
+        servidor.eliminarCliente(claveCliente);
+        if (nombreUsuario != null) servidor.getGestorPartida().eliminarJugador(nombreUsuario);
     }
 }
